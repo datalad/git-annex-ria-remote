@@ -1,39 +1,42 @@
-import os
-import os.path as op
-import mock
 from datalad.api import (
     create,
 )
 from datalad.tests.utils import with_tempfile
 from tempfile import TemporaryDirectory
-import ria_remote
 
 
 with TemporaryDirectory() as objdir:
     @with_tempfile
-    @mock.patch.dict(
-        os.environ,
-        {
-            'PATH': ':'.join(
-                os.environ['PATH'].split(':') + [
-                    op.join(
-                        op.dirname(ria_remote.__file__),
-                        op.pardir,
-                        'bin')
-                ]),
-        }
-    )
-    def test_gitannex(path):
+    def test_gitannex_localio(path):
         ds = create(path)
         ds.repo._run_annex_command(
             'initremote',
             annex_options=[
-                'ria-dummy', 'type=external',
+                'ria-local', 'type=external',
                 'externaltype=ria', 'encryption=none',
                 'base-path={}'.format(path)]
         )
         ds.repo._run_annex_command(
             'testremote',
-            annex_options=['ria-dummy'],
+            annex_options=['ria-local'],
+            log_stdout=False,
+        )
+
+
+with TemporaryDirectory() as objdir:
+    @with_tempfile
+    def test_gitannex_remoteio(path):
+        ds = create(path)
+        ds.repo._run_annex_command(
+            'initremote',
+            annex_options=[
+                'ria-remote', 'type=external',
+                'externaltype=ria', 'encryption=none',
+                'ssh-host=datalad-test',
+                'base-path={}'.format(path)]
+        )
+        ds.repo._run_annex_command(
+            'testremote',
+            annex_options=['ria-remote'],
             log_stdout=False,
         )

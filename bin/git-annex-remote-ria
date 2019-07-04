@@ -1,0 +1,15 @@
+#!/usr/bin/env python3
+
+from annexremote import Master
+from ria_remote import RIARemote
+
+
+def main():
+    master = Master()
+    remote = RIARemote(master)
+    master.LinkRemote(remote)
+    master.Listen()
+
+
+if __name__ == "__main__":
+    main()

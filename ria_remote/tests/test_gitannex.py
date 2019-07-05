@@ -4,6 +4,10 @@ from datalad.api import (
 from datalad.tests.utils import with_tempfile
 from tempfile import TemporaryDirectory
 
+from ria_remote.tests.utils import (
+    skip_ssh,
+)
+
 
 @with_tempfile(mkdir=True)
 @with_tempfile(mkdir=True)
@@ -23,6 +27,7 @@ def test_gitannex_localio(path, objtree):
     )
 
 
+@skip_ssh
 @with_tempfile(mkdir=True)
 @with_tempfile(mkdir=True)
 def test_gitannex_remoteio(path, objtree):

@@ -1,8 +1,31 @@
 import os
 import inspect
 from functools import wraps
+from six import iteritems
+
 from nose import SkipTest
 from nose.plugins.attrib import attr
+
+
+# think about migrating to AnnexRepo
+def initremote(repo, name, encryption=None, config=None):
+    cfg = dict(config) if config else {}
+    cfg['encryption'] = encryption if encryption else 'none'
+    args = [name]
+    args += ['{}={}'.format(k, v) for k, v in iteritems(cfg)]
+    repo._run_annex_command(
+        'initremote',
+        annex_options=args,
+    )
+
+
+def initexternalremote(repo, name, type, encryption=None, config=None):
+    config = dict(
+        config if config else {},
+        type='external',
+        externaltype=type,
+    )
+    return initremote(repo, name, encryption=encryption, config=config)
 
 
 def check_not_generatorfunction(func):

@@ -3,11 +3,28 @@ language: python
 
 python:
   - 3.5
-  #- 3.6
-  #- 3.7
+  - 3.6
+  - 3.7
 
 cache:
   - apt
+
+matrix:
+  include:
+  # force space in each absolute file name
+  - env:
+    - TMPDIR="/var/tmp/sym link"
+    python: 3.6
+  # run if git-annex version in neurodebian -devel differs
+  - env:
+    - _DL_DEVEL_ANNEX=1
+    python: 3.6
+  # run all SSH-based tests, largely identical functionality, but different
+  # IO code path
+  - env:
+    - RIA_TESTS_SSH=1
+    python: 3.6
+
 
 before_install:
   # The ultimate one-liner setup for NeuroDebian repository
@@ -20,8 +37,6 @@ before_install:
   - if [ ! -z "${_DL_UPSTREAM_GITANNEX:-}" ]; then sudo tools/install-annex-snapshot.sh; sudo ln -s `find /usr/local/lib/git-annex.linux -maxdepth 1 -type f -perm /+x` /usr/local/bin/; else sudo eatmydata apt-get install git-annex-standalone ; fi
   # Install optionally -devel version of annex, and if goes wrong (we have most recent), exit right away
   - if [ ! -z "${_DL_DEVEL_ANNEX:-}" ]; then tools/prep-travis-devel-annex.sh || exit 0; fi
-  # Optionally install the latest Git.  Exit code 100 indicates that bundled is same as the latest.
-  - if [ ! -z "${_DL_UPSTREAM_GIT:-}" ]; then sudo tools/install-latest-git.sh || [ $? -eq 100 ] && exit 0; fi
 
 install:
   # Install standalone build of git-annex for the recent enough version

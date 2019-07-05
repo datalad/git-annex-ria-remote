@@ -1,10 +1,31 @@
 import os
 import inspect
+from glob import glob
+from pathlib import Path
 from functools import wraps
 from six import iteritems
 
+from datalad.tests.utils import (
+    create_tree,
+)
+
 from nose import SkipTest
 from nose.plugins.attrib import attr
+
+example_payload = {
+    'one.txt': 'content1',
+    'subdir': {
+        'two': 'content2',
+    },
+}
+
+
+def get_all_files(path):
+    return sorted([
+        Path(p).relative_to(path)
+        for p in glob(str(Path(path) / '**'), recursive=True)
+        if not Path(p).is_dir()
+    ])
 
 
 # think about migrating to AnnexRepo
@@ -26,6 +47,19 @@ def initexternalremote(repo, name, type, encryption=None, config=None):
         externaltype=type,
     )
     return initremote(repo, name, encryption=encryption, config=config)
+
+
+def setup_archive_remote(repo, archive_path):
+    cfg = {
+        'base-path': archive_path,
+    }
+    if 'RIA_TESTS_SSH' in os.environ:
+        cfg['ssh-host'] = 'datalad-test'
+    initexternalremote(repo, 'archive', 'ria', config=cfg)
+
+
+def populate_dataset(ds):
+    create_tree(ds.path, example_payload)
 
 
 def check_not_generatorfunction(func):

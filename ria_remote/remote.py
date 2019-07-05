@@ -438,8 +438,10 @@ class RIARemote(SpecialRemote):
         )
 
     def _get_obj_location(self, key):
-        key_dir = self.annex.dirhash(key)
+        key_dir = self.annex.dirhash_lower(key)
         dsobj_dir = self.objtree_base_path / self.archive_id[:3] / self.archive_id[3:]
         archive_path = dsobj_dir / 'archive.7z'
-        key_path = Path(key_dir) / key
+        # double 'key' is not a mistake, but needed to achieve the exact same
+        # layout as the 'directory'-type special remote
+        key_path = Path(key_dir) / key / key
         return dsobj_dir, archive_path, key_path

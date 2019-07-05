@@ -2,10 +2,10 @@ from datalad.api import (
     create,
 )
 from datalad.tests.utils import with_tempfile
-from tempfile import TemporaryDirectory
 
 from ria_remote.tests.utils import (
     skip_ssh,
+    initexternalremote,
 )
 
 
@@ -13,13 +13,9 @@ from ria_remote.tests.utils import (
 @with_tempfile(mkdir=True)
 def test_gitannex_localio(path, objtree):
     ds = create(path)
-    ds.repo._run_annex_command(
-        'initremote',
-        annex_options=[
-            'ria-local', 'type=external',
-            'externaltype=ria', 'encryption=none',
-            'base-path={}'.format(objtree)]
-    )
+    initexternalremote(
+        ds.repo, 'ria-local', 'ria',
+        config={'base-path': objtree})
     ds.repo._run_annex_command(
         'testremote',
         annex_options=['ria-local'],
@@ -32,14 +28,12 @@ def test_gitannex_localio(path, objtree):
 @with_tempfile(mkdir=True)
 def test_gitannex_remoteio(path, objtree):
     ds = create(path)
-    ds.repo._run_annex_command(
-        'initremote',
-        annex_options=[
-            'ria-remote', 'type=external',
-            'externaltype=ria', 'encryption=none',
-            'ssh-host=datalad-test',
-            'base-path={}'.format(objtree)]
-    )
+    initexternalremote(
+        ds.repo, 'ria-remote', 'ria',
+        config={
+            'base-path': objtree,
+            'ssh-host': 'datalad-test',
+        })
     ds.repo._run_annex_command(
         'testremote',
         annex_options=['ria-remote'],

@@ -28,7 +28,45 @@ def get_all_files(path):
     ])
 
 
-# think about migrating to AnnexRepo
+# TODO think about migrating to AnnexRepo
+def fsck(repo, paths=None, remote=None, fast=False, incremental=False,
+         limit=None, annex_options=None, git_options=None):
+    """
+    Parameters
+    ----------
+    paths : list
+    remote : str
+    fast : bool
+    incremental : bool or {'continue'} or SCHEDULE
+    limit : str or all
+    """
+    args = [] if annex_options is None else list(annex_options)
+    if fast:
+        args.append('--fast')
+    if limit:
+        # looks funky, but really is a test if the `all` function was passed
+        # alternatives would have been 1) a dedicated argument (would need
+        # a check for mutual exclusivity with --branch), or 2) a str-type
+        # special values that has no meaning in Git and is less confusing
+        if limit is all:
+            args.append('--all')
+        else:
+            args.append('--branch={}'.format(limit))
+    if remote:
+        args.append('--from={}'.format(remote))
+    if incremental:
+        args.append('--incremental')
+        if not (incremental is True):
+            args.append('--incremental-schedule={}'.format(incremental))
+    return repo._run_annex_command_json(
+        'fsck',
+        files=paths,
+        git_options=git_options,
+        opts=args,
+    )
+
+
+# TODO think about migrating to AnnexRepo
 def initremote(repo, name, encryption=None, config=None):
     cfg = dict(config) if config else {}
     cfg['encryption'] = encryption if encryption else 'none'

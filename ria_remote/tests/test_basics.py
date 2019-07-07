@@ -1,3 +1,5 @@
+from pathlib import Path
+import subprocess
 from datalad.api import (
     create,
 )
@@ -9,16 +11,18 @@ from datalad.tests.utils import (
 
 from ria_remote.tests.utils import (
     initremote,
+    initexternalremote,
     setup_archive_remote,
     populate_dataset,
     get_all_files,
+    fsck,
 )
 
-
 @with_tempfile(mkdir=True)
 @with_tempfile(mkdir=True)
 @with_tempfile(mkdir=True)
-def test_archive_layout(path, objtree, dirremote):
+@with_tempfile()
+def test_archive_layout(path, objtree, dirremote, archivremote):
     ds = create(path)
     setup_archive_remote(ds.repo, objtree)
     populate_dataset(ds)
@@ -45,3 +49,18 @@ def test_archive_layout(path, objtree, dirremote):
         sorted([p.parts[-4:] for p in arxiv_files]),
         sorted([p.parts for p in get_all_files(dirremote)])
     )
+
+    # we can simply pack up the content of the directory remote into a
+    # 7z archive and place it in the right location to get a functional
+    # special remote
+    whereis = ds.repo.whereis('one.txt')
+    targetpath = Path(archivremote) / ds.id[:3] / ds.id[3:]
+    targetpath.mkdir(parents=True)
+    subprocess.run(
+        ['7z', 'u', str(targetpath / 'archive.7z'), '.'],
+        cwd=dirremote,
+    )
+    initexternalremote(ds.repo, '7z', 'ria', config={'base-path': archivremote})
+    # now fsck the new remote to get the new special remote indexed
+    fsck(ds.repo, remote='7z', fast=True)
+    eq_(len(ds.repo.whereis('one.txt')), len(whereis) + 1)

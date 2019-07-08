@@ -1,4 +1,4 @@
-# Git-annex special remote for accessing (Remote) Indexed file Archives
+# Git-annex special remote for accessing (Remote) Indexed file Archives (RIA)
 
 [![Travis tests status](https://secure.travis-ci.org/datalad/git-annex-ria-remote.png?branch=master)](https://travis-ci.org/datalad/git-annex-ria-remote) [![GitHub release](https://img.shields.io/github/release/datalad/git-annex-ria-remote.svg)](https://GitHub.com/datalad/git-annex-ria-remote/releases/) [![PyPI version fury.io](https://badge.fury.io/py/git-annex-ria-remote.svg)](https://pypi.python.org/pypi/git-annex-ria-remote/)
 

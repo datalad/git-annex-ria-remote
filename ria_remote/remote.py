@@ -297,6 +297,7 @@ class RIARemote(SpecialRemote):
         objtree_base_path = _get_gitcfg(
             gitdir, 'annex.ria-remote.{}.base-path'.format(name))
         # TODO RF naming: default -> base
+        # Ben: This TODO seems to be done, right?
         self.objtree_base_path = objtree_base_path.strip() \
             if objtree_base_path else objtree_base_path
 

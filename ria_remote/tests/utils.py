@@ -57,6 +57,9 @@ def fsck(repo, paths=None, remote=None, fast=False, incremental=False,
     if incremental:
         args.append('--incremental')
         if not (incremental is True):
+            # Ben: Confused. If 'continue' is a valid value (see docstring for incremental),
+            # then it should be treated somehow and probably not as a value for schedule.
+            # I guess, it's supposed to trigger --more?
             args.append('--incremental-schedule={}'.format(incremental))
     return repo._run_annex_command_json(
         'fsck',
@@ -117,7 +120,7 @@ def skip_ssh(func):
     @attr('skip_ssh')
     def newfunc(*args, **kwargs):
         if 'RIA_TESTS_SSH' not in os.environ:
-            raise SkipTest("Disabled, set RIA_TEST_SSH to run")
+            raise SkipTest("Disabled, set RIA_TESTS_SSH to run")
         return func(*args, **kwargs)
     return newfunc
 

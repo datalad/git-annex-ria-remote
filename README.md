@@ -50,6 +50,54 @@ install the latest version of `git-annex-ria-remote` from
     pip install git-annex-ria-remote
 
 
+## Use
+
+A `ria` special remote is set up like any other "external"-type remote via the
+git-annex `initremote` command. There is a single additional required argument
+in contrast to the standard set: `base-path` which determines the base
+directory where the special remote places its keys:
+
+    git annex initremote myremote \
+        type=external encryption=none \
+        externaltype=ria base-path=/tmp/basepath/here
+
+The remote is now ready for use. Any directories will be created on demand.
+The key store for repository will be located underneath the given base path,
+in a structure like this:
+
+    /tmp/basepath/here
+    └── 2e5
+        └── 24934-a09e-11e9-8503-f0d5bf7b5561
+            └── ff4
+                └── c57
+                    └── MD5E-s4--ba1f2511fc30423bdbb183fe33f3dd0f
+                        └── MD5E-s4--ba1f2511fc30423bdbb183fe33f3dd0f
+
+where the first two levels represent a tree structure that can host key stores
+for any number of repositories, and the remaining level are identical to
+the organization of a `directory`-type git-annex special remote.
+The directory names for the two top-most levels are build from the git-annex
+UUID for the special remote, or a DataLad dataset UUID, if available.
+
+The special remote also supports SSH-based operation. To enable it, an
+additional host name argument has to be given:
+
+    git annex initremote myremote \
+        type=external encryption=none \
+        externaltype=ria base-path=/tmp/basepath/here \
+        ssh-host=ria.example.com
+
+This configuration will make the special remote use `/tmp/basepath/here` on
+`ria.example.com`. Any SSH-access customizations (user name, ports, etc.) have
+to be implemented via the standard SSH configuration mechanism, for example, by
+placing a snippet like this in `$HOME/.ssh/config`:
+
+    Host ria.example.com
+      User mike
+      Port 2222
+      PreferredAuthentications publickey
+
+
 ## Support
 
 All bugs, concerns and enhancement requests for this software can be submitted here:

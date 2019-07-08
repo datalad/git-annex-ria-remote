@@ -63,6 +63,11 @@ def fsck(repo, paths=None, remote=None, fast=False, incremental=False,
         files=paths,
         git_options=git_options,
         opts=args,
+        # next two are to avoid warnings and errors due to an fsck
+        # finding any issues -- those will be reported in the
+        # JSON results, and can be acted upon
+        expect_stderr=True,
+        expect_fail=True,
     )
 
 

@@ -1,6 +1,6 @@
 # Git-annex special remote for accessing (Remote) Indexed file Archives (RIA)
 
-[![Travis tests status](https://secure.travis-ci.org/datalad/git-annex-ria-remote.png?branch=master)](https://travis-ci.org/datalad/git-annex-ria-remote) [![GitHub release](https://img.shields.io/github/release/datalad/git-annex-ria-remote.svg)](https://GitHub.com/datalad/git-annex-ria-remote/releases/) [![PyPI version fury.io](https://badge.fury.io/py/git-annex-ria-remote.svg)](https://pypi.python.org/pypi/git-annex-ria-remote/)
+[![Travis tests status](https://secure.travis-ci.org/datalad/git-annex-ria-remote.png?branch=master)](https://travis-ci.org/datalad/git-annex-ria-remote) [![GitHub release](https://img.shields.io/github/release/datalad/git-annex-ria-remote.svg)](https://GitHub.com/datalad/git-annex-ria-remote/releases/) [![PyPI version fury.io](https://badge.fury.io/py/ria-remote.svg)](https://pypi.python.org/pypi/ria-remote/)
 
 This [git-annex](http://git-annex.branchable.com) [special
 remote](http://git-annex.branchable.com/special_remotes) implementation is very
@@ -43,11 +43,11 @@ this one instead:
 Before you install this package, please make sure that you [install a recent
 version of git-annex](https://git-annex.branchable.com/install).  This special
 remote requires at minimum git-annex version 6.20160511. Afterwards,
-install the latest version of `git-annex-ria-remote` from
-[PyPi](https://pypi.org/project/git-annex-ria-remote):
+install the latest version of `ria-remote` from
+[PyPi](https://pypi.org/project/ria-remote):
 
     # install from PyPi
-    pip install git-annex-ria-remote
+    pip install ria-remote
 
 
 ## Use

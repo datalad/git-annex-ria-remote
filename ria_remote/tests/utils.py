@@ -54,12 +54,11 @@ def fsck(repo, paths=None, remote=None, fast=False, incremental=False,
             args.append('--branch={}'.format(limit))
     if remote:
         args.append('--from={}'.format(remote))
-    if incremental:
+    if incremental == 'continue':
+        args.append('--more')
+    elif incremental:
         args.append('--incremental')
         if not (incremental is True):
-            # Ben: Confused. If 'continue' is a valid value (see docstring for incremental),
-            # then it should be treated somehow and probably not as a value for schedule.
-            # I guess, it's supposed to trigger --more?
             args.append('--incremental-schedule={}'.format(incremental))
     return repo._run_annex_command_json(
         'fsck',

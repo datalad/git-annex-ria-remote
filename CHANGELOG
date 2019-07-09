@@ -1,3 +1,10 @@
+0.3 (Jul 09, 2019) -- ready?
+
+- All functionality implemented
+- Tests for major use cases, and git-annex compatibility
+- Travis CI setup
+- Some documentation
+
 0.2 (May 15, 2019) -- make it run
 
 - All desired functionality for a usable draft

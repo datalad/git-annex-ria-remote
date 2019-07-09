@@ -2,7 +2,7 @@ PYTHON ?= python
 
 clean:
 	$(PYTHON) setup.py clean
-	rm -rf dist build bin docs/build docs/source/generated
+	rm -rf dist build docs/build docs/source/generated
 	-find . -name '*.pyc' -delete
 	-find . -name '__pycache__' -type d -delete
 

@@ -21,6 +21,7 @@ from ria_remote.tests.utils import (
     fsck,
 )
 
+
 @with_tempfile(mkdir=True)
 @with_tempfile(mkdir=True)
 @with_tempfile(mkdir=True)
@@ -57,7 +58,7 @@ def test_archive_layout(path, objtree, dirremote, archivremote):
     # 7z archive and place it in the right location to get a functional
     # special remote
     whereis = ds.repo.whereis('one.txt')
-    targetpath = Path(archivremote) / ds.id[:3] / ds.id[3:]
+    targetpath = Path(archivremote) / ds.id[:3] / ds.id[3:] / 'archives'
     targetpath.mkdir(parents=True)
     subprocess.run(
         ['7z', 'u', str(targetpath / 'archive.7z'), '.'],

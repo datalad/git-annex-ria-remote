@@ -21,7 +21,7 @@ from ria_remote.tests.utils import (
 @with_tempfile()
 def test_site_archive_location_config(path, objtree, objtree_alt):
     ds = create(path)
-    # needs base-pathunder all circumstances
+    # needs base-path under all circumstances
     assert_raises(
         CommandError,
         initexternalremote,

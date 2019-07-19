@@ -21,6 +21,10 @@ lgr = logging.getLogger('ria_remote')
 # - make archive check optional
 
 
+# - check for layout indicators in prepare and file a warning suggesting that there might be an update
+# - move fsck to core
+
+
 def _get_gitcfg(gitdir, key, cfgargs=None):
     cmd = [
         'git',
@@ -281,6 +285,8 @@ class RIARemote(SpecialRemote):
 
     It cannot be used directly, but see its subclasses.
     """
+    # TODO: Update docstring
+
     def __init__(self, annex):
         super(RIARemote, self).__init__(annex)
         self.objtree_path = None
@@ -437,9 +443,11 @@ class RIARemote(SpecialRemote):
         )
 
     def _get_obj_location(self, key):
+
         key_dir = self.annex.dirhash_lower(key)
-        dsobj_dir = self.objtree_base_path / self.archive_id[:3] / self.archive_id[3:]
-        archive_path = dsobj_dir / 'archive.7z'
+        dsgit_dir = self.objtree_base_path / self.archive_id[:3] / self.archive_id[3:]
+        archive_path = dsgit_dir / 'archives' / 'archive.7z'
+        dsobj_dir = dsgit_dir / 'annex' / 'objects'
         # double 'key' is not a mistake, but needed to achieve the exact same
         # layout as the 'directory'-type special remote
         key_path = Path(key_dir) / key / key

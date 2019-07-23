@@ -88,11 +88,11 @@ def test_backup_archive(path, objtree, archivremote):
     # copy files into the RIA archive
     ds.repo.copy_to('.', 'archive')
 
-    targetpath = Path(archivremote) / ds.id[:3] / ds.id[3:]
+    targetpath = Path(archivremote) / ds.id[:3] / ds.id[3:] / 'archives'
     targetpath.mkdir(parents=True)
     subprocess.run(
         ['7z', 'u', str(targetpath / 'archive.7z'), '.'],
-        cwd=str(Path(objtree) / ds.id[:3] / ds.id[3:]),
+        cwd=str(Path(objtree) / ds.id[:3] / ds.id[3:] / 'annex' / 'objects'),
     )
     initexternalremote(ds.repo, '7z', 'ria', config={'base-path': archivremote})
     # wipe out the initial RIA remote (just for testing if the upcoming

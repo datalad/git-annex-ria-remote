@@ -441,6 +441,22 @@ class RIARemote(SpecialRemote):
         #return self.objtree_base_path.is_dir()
         return not self.storage_host
 
+    def _info(self, msg):
+
+        if self.can_notify:
+            self.annex.info(msg)
+        # TODO: else: if we can't have an actual info message, at least have a debug message
+        #       This probably requires further refurbishment of datalad's capability to deal with such aspects of the
+        #       special remote protocol
+
+    def _set_read_only(self, msg):
+
+        if not self.force_write:
+            self.read_only = True
+            self._info(msg)
+        else:
+            self._info("Was instructed to force write")
+
     def _check_layout_version(self):
         """Check whether we can deal with the layout reported by the remote end
 
@@ -458,62 +474,62 @@ class RIARemote(SpecialRemote):
         object_tree_version_file = \
             self.objtree_base_path / self.archive_id[:3] / self.archive_id[3:] / 'ria-layout-version'
 
+        read_only_msg = "Setting remote to read-only usage in order to prevent damage by putting things into an " \
+                        "unknown version of the target layout. You can overrule this by configuring " \
+                        "'annex.ria-remote.<name>.force-write'."
+
         # TODO: It might be faster to directly try to read it, parse the output to detect non-existence of the file
         #       and act upon it, rather than having to separate remote calls executed for checking existence and then
         #       read the content
 
         # 1. check dataset tree version
         if not self.io.exists(dataset_tree_version_file):
-            # we are first, just put our stamp on it
-            self.io.mkdir(dataset_tree_version_file.parent)
-            self.io.write_file(dataset_tree_version_file, self._dataset_tree_version)
-            # TODO: Catch (and parse?) possible errors to know when we don't need to care.
-            #       We might not have permission to write to the base path. This doesn't necessarily prevent us from
-            #       doing everything else, so ignore and let someone else care for it
+            if not self.io.exists(dataset_tree_version_file.parent):
+                # we are first, just put our stamp on it
+                try:
+                    self.io.mkdir(dataset_tree_version_file.parent)
+                    self.io.write_file(dataset_tree_version_file, self._dataset_tree_version)
+                except Exception as e:
+                    raise RemoteError(str(e))
+                    # Note, that we need to fail in any case but in a way appropriate for a special remote. Otherwise
+                    # we get something like a "broken pipe" error, which tells nothing about the issue.
+            else:
+                # directory is there, but no version file. We don't know what that is. Treat the same way as if there
+                # was an unknown version on record
+                self._info("Remote doesn't report any dataset tree version. Consider upgrading git-annex-ria-remote or "
+                           "fix the structure on the remote end.")
+                self._set_read_only(read_only_msg)
 
         else:
-
             remote_dataset_tree_version = self.io.read_file(dataset_tree_version_file)
             if remote_dataset_tree_version != self._dataset_tree_version:
                 # Note: In later versions, condition might change in order to deal with older versions
-
-                if self.can_notify:
-                    self.annex.info("Remote dataset tree reports version {}. Supported version is {}. Consider "
-                                    "upgrading git-annex-ria-remote.".format(remote_dataset_tree_version,
-                                                                             self._dataset_tree_version))
-
-                if not self.force_write:
-                    # we don't know where to put a dataset. We can still try to find it at the old place, but we
-                    # shouldn't put a new one in there except if being forced by config.
-                    self.read_only = True
-
-                    if self.can_notify:
-                        self.annex.info("Setting remote to read-only usage in order to prevent damage by putting "
-                                        "things into an unknown version of the target layout. You can overrule this by "
-                                        "configuring 'ria-remote.<name>.force-write'.")
+                self._info("Remote dataset tree reports version {}. Supported version is {}. Consider upgrading "
+                           "git-annex-ria-remote or fix the structure on the remote end."
+                           "".format(remote_dataset_tree_version, self._dataset_tree_version))
+                self._set_read_only(read_only_msg)
 
         # 2. check (annex) object tree version
         if not self.io.exists(object_tree_version_file):
-            # we are first, just put our stamp on it
-            self.io.mkdir(object_tree_version_file.parent)
-            self.io.write_file(object_tree_version_file, self._object_tree_version)
+            if not self.io.exists(object_tree_version_file.parent):
+                # we are first, just put our stamp on it
+                try:
+                    self.io.mkdir(object_tree_version_file.parent)
+                    self.io.write_file(object_tree_version_file, self._object_tree_version)
+                except Exception as e:
+                    raise RemoteError(str(e))
+                    # Note, that we need to fail in any case but in a way appropriate for a special remote. Otherwise
+                    # we get something like a "broken pipe" error, which tells nothing about the issue.
+            else:
+                self._info("Remote doesn't report any dataset tree version. Consider upgrading git-annex-ria-remote or "
+                           "fix the structure on the remote end.")
+                self._set_read_only(read_only_msg)
         else:
             remote_object_tree_version = self.io.read_file(object_tree_version_file)
             if remote_object_tree_version != self._object_tree_version:
-                if self.can_notify:
-                    self.annex.info("Remote object tree reports version {}. Supported version is {}. Consider "
-                                    "upgrading git-annex-ria-remote.".format(remote_object_tree_version,
-                                                                             self._object_tree_version))
-
-                if not self.force_write:
-                    # we don't know where to put a dataset. We can still try to find it at the old place, but we
-                    # shouldn't put a new one in there except if being forced by config.
-                    self.read_only = True
-
-                    if self.can_notify:
-                        self.annex.info("Setting remote to read-only usage in order to prevent damage by putting "
-                                        "things into an unknown version of the target layout. You can overrule this by "
-                                        "configuring 'ria-remote.<name>.force-write'.")
+                self._info("Remote object tree reports version {}. Supported version is {}. Consider upgrading "
+                           "git-annex-ria-remote.".format(remote_object_tree_version, self._object_tree_version))
+                self._set_read_only(read_only_msg)
 
     def prepare(self):
 

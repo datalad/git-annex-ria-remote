@@ -17,7 +17,7 @@ from ria_remote.tests.utils import (
 
 
 @with_tempfile(mkdir=True)
-@with_tempfile(mkdir=True)
+@with_tempfile()
 @with_tempfile()
 def test_site_archive_location_config(path, objtree, objtree_alt):
     ds = create(path)

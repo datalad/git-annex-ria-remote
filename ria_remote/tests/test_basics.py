@@ -34,7 +34,7 @@ from ria_remote.tests.utils import (
 
 
 @with_tempfile(mkdir=True)
-@with_tempfile(mkdir=True)
+@with_tempfile()
 @with_tempfile(mkdir=True)
 @with_tempfile()
 def test_archive_layout(path, objtree, dirremote, archivremote):
@@ -84,7 +84,7 @@ def test_archive_layout(path, objtree, dirremote, archivremote):
 
 
 @with_tempfile(mkdir=True)
-@with_tempfile(mkdir=True)
+@with_tempfile()
 @with_tempfile()
 def test_backup_archive(path, objtree, archivremote):
     """Similar to test_archive_layout(), but not focused on
@@ -141,7 +141,7 @@ def test_git_remote():
 
 
 @with_tempfile(mkdir=True)
-@with_tempfile(mkdir=True)
+@with_tempfile()
 def test_version_check(path, objtree):
 
     ds = create(path)

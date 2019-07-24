@@ -10,6 +10,7 @@ from datalad.tests.utils import (
     assert_repo_status,
     assert_status,
     eq_,
+    SkipTest
 )
 
 from ria_remote.tests.utils import (
@@ -48,9 +49,11 @@ def test_archive_layout(path, objtree, dirremote, archivremote):
     # anything went there at all?
     assert len(arxiv_files) > 1
     # minus the two layers for the archive path the content is identically
-    # structured
+    # structured, except for the two additional version files at the root of the entire tree and at the dataset level
+    assert len([p for p in arxiv_files if p.name == 'ria-layout-version']) == 2
+
     eq_(
-        sorted([p.parts[-4:] for p in arxiv_files]),
+        sorted([p.parts[-4:] for p in arxiv_files if p.name != 'ria-layout-version']),
         sorted([p.parts for p in get_all_files(dirremote)])
     )
 
@@ -121,3 +124,11 @@ def test_backup_archive(path, objtree, archivremote):
     ds.drop('.')
     ds.get('.')
     assert_status('ok', [annexjson2result(r, ds) for r in fsck(ds.repo)])
+
+
+def test_git_remote():
+    raise SkipTest("TODO")
+
+
+def test_version_check():
+    raise SkipTest("TODO")

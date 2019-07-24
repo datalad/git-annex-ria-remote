@@ -51,13 +51,13 @@ def test_site_archive_location_config(path, objtree, objtree_alt):
     assert len(arxiv_files) > 1
 
     # now simulate a site-wide reconfiguration (here done to the
-    # local git-repos config, but nothing that is commited or
+    # local git-repos config, but nothing that is committed or
     # invokes 'enableremote'
     # drop everything locally
     assert_status('ok', ds.drop('.'))
     # relocate the archive on the system
     shutil.move(objtree, objtree_alt)
-    # adjust the config -- doesn't touch commited content
+    # adjust the config -- doesn't touch committed content
     ds.config.set(
         'annex.ria-remote.myown.base-path', objtree_alt, where='local')
     # remote continues to function normally after system reconfiguration

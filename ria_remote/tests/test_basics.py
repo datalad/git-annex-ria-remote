@@ -1,16 +1,26 @@
 from pathlib import Path
 import shutil
 import subprocess
+import logging
 from datalad.interface.results import annexjson2result
 from datalad.api import (
     create,
+)
+
+from datalad.utils import (
+    swallow_logs
 )
 from datalad.tests.utils import (
     with_tempfile,
     assert_repo_status,
     assert_status,
     eq_,
-    SkipTest
+    SkipTest,
+    assert_raises
+)
+
+from datalad.support.exceptions import (
+    IncompleteResultsError
 )
 
 from ria_remote.tests.utils import (
@@ -130,5 +140,62 @@ def test_git_remote():
     raise SkipTest("TODO")
 
 
-def test_version_check():
-    raise SkipTest("TODO")
+@with_tempfile(mkdir=True)
+@with_tempfile(mkdir=True)
+def test_version_check(path, objtree):
+
+    ds = create(path)
+    setup_archive_remote(ds.repo, objtree)
+    populate_dataset(ds)
+    ds.save()
+    assert_repo_status(ds.path)
+
+    remote_ds_tree_version_file = Path(objtree) / 'ria-layout-version'
+    remote_obj_tree_version_file = Path(objtree) / ds.id[:3] / ds.id[3:] / 'ria-layout-version'
+
+    # Those files are not yet there
+    assert not remote_ds_tree_version_file.exists()
+    assert not remote_obj_tree_version_file.exists()
+
+    # Now copy everything to remote. This should create the structure including those version files
+    ds.repo.copy_to('.', 'archive')
+    assert remote_ds_tree_version_file.exists()
+    assert remote_obj_tree_version_file.exists()
+
+    # Currently the content of booth should be "1"
+    with open(remote_ds_tree_version_file, 'r') as f:
+        eq_(f.read(), '1')
+    with open(remote_obj_tree_version_file, 'r') as f:
+        eq_(f.read(), '1')
+
+    # Accessing the remote should not yield any output regarding versioning, since it's the "correct" version
+    # Note that "fsck" is an arbitrary choice. We need just something to talk to the special remote
+    with swallow_logs(new_level=logging.INFO) as cml:
+        fsck(ds.repo, remote='archive', fast=True)
+        assert not cml.out  # TODO: For some reason didn't get cml.assert_logged to assert "nothing was logged"
+
+    # Now fake-change the version
+    with open(remote_obj_tree_version_file, 'w') as f:
+        f.write('2')
+
+    # Now we should see a message about it
+    with swallow_logs(new_level=logging.INFO) as cml:
+        fsck(ds.repo, remote='archive', fast=True)
+        cml.assert_logged(level="INFO", msg="Remote object tree reports version 2", regex=False)
+        cml.assert_logged(level="INFO", msg="Setting remote to read-only usage", regex=False)
+
+    # reading still works:
+    ds.drop('.')
+    assert_status('ok', ds.get('.'))
+
+    # but writing doesn't:
+    with open(str(Path(ds.path) / 'new_file'), 'w') as f:
+        f.write("arbitrary addition")
+    ds.save(message="Add a new_file")
+
+    # TODO: use self.annex.error and see whether we get an actual error result
+    assert_raises(IncompleteResultsError, ds.repo.copy_to, 'new_file', 'archive')
+
+    # However, we can force it by configuration
+    ds.config.add("annex.ria-remote.archive.force-write", "true", where='local')
+    ds.repo.copy_to('new_file', 'archive')

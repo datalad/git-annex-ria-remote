@@ -19,9 +19,6 @@ lgr = logging.getLogger('ria_remote')
 
 # TODO
 # - make archive check optional
-
-
-# - check for layout indicators in prepare and file a warning suggesting that there might be an update
 # - move fsck to core
 
 
@@ -380,6 +377,7 @@ class RIARemote(SpecialRemote):
         # by default we can read and write
         self.read_only = False
         self.can_notify = None  # to be figured out later, since annex.protocol.extensions is not yet accessible
+        self.force_write = None
 
     def _load_cfg(self, gitdir, name):
         self.storage_host = _get_gitcfg(
@@ -388,12 +386,15 @@ class RIARemote(SpecialRemote):
             gitdir, 'annex.ria-remote.{}.base-path'.format(name))
         self.objtree_base_path = objtree_base_path.strip() \
             if objtree_base_path else objtree_base_path
+        # Whether or not to force writing to the remote. Currently used to overrule write protection due to layout
+        # version mismatch.
+        self.force_write = _get_gitcfg(
+            gitdir, 'annex.ria-remote.{}.force-write'.format(name))
 
     def _verify_config(self, gitdir, fail_noid=True):
         # try loading all needed info from git config
-        cfgname = self.annex.getconfig('cfgname')
-        if cfgname:
-            self._load_cfg(gitdir, cfgname)
+        name = self.annex.getconfig('name')
+        self._load_cfg(gitdir, name)
 
         if not self.objtree_base_path:
             self.objtree_base_path = self.annex.getconfig('base-path')
@@ -416,9 +417,8 @@ class RIARemote(SpecialRemote):
             raise RemoteError(
                 "No archive ID configured. This should not happen.")
 
-        # Whether or not to force writing to the remote. Currently used to overrule write protection due to layout
-        # version mismatch.
-        self.force_write = self.annex.getconfig('force-write')
+        if not self.force_write:
+            self.force_write = self.annex.getconfig('force-write')
 
     def initremote(self):
         # which repo are we talking about

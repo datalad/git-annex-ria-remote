@@ -138,7 +138,7 @@ def test_create_as_bare(origin, remote_base_path, remote_base_url, public, consu
     ds.repo.copy_to('.', 'riaremote')
 
     # Now, let's make the remote end a valid, bare git repository
-    eq_(subprocess.run(['git', 'init', '--bare'], cwd=remote_dataset_path).returncode,
+    eq_(subprocess.run(['git', 'init', '--bare'], cwd=str(remote_dataset_path)).returncode,
         0)
 
     #subprocess.run(['mv', 'hooks/post-update.sample', 'hooks/post-update'], cwd=remote_dataset_path)

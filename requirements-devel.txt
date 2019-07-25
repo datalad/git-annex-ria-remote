@@ -1,1 +1,3 @@
 nose
+# Currently necessary so datalad doesn't puke when a special remote sends an info message:
+git+https://github.com/datalad/datalad.git@master

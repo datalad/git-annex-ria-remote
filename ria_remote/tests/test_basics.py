@@ -136,10 +136,6 @@ def test_backup_archive(path, objtree, archivremote):
     assert_status('ok', [annexjson2result(r, ds) for r in fsck(ds.repo)])
 
 
-def test_git_remote():
-    raise SkipTest("TODO")
-
-
 @with_tempfile(mkdir=True)
 @with_tempfile()
 def test_version_check(path, objtree):

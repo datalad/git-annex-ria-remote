@@ -13,7 +13,8 @@ from datalad.tests.utils import (
     assert_result_count,
     eq_,
     SkipTest,
-    assert_raises
+    assert_raises,
+    serve_path_via_http
 )
 from ria_remote.tests.utils import (
     initremote,
@@ -83,7 +84,6 @@ def test_bare_git(origin, remote_base_path):
     # ria-remote doesn't know yet:
     eq_(len(ds.repo.whereis('one.txt')), 2)
 
-    import pdb; pdb.set_trace()
     # But after fsck it does:
     assert_result_count([annexjson2result(r, ds) for r in fsck(ds.repo, remote='riaremote', fast=True)],
                         2,
@@ -93,11 +93,13 @@ def test_bare_git(origin, remote_base_path):
 
 
 @with_tempfile
-@with_tempfile
+@with_tempfile(mkdir=True)
+@serve_path_via_http
 @with_tempfile
 @with_tempfile
 @with_tempfile(mkdir=True)
-def test_create_as_bare(origin, remote_base_path, public, consumer, tmp_location):
+def test_create_as_bare(origin, remote_base_path, remote_base_url, public, consumer, tmp_location):
+
     # Note/TODO: Do we need things like:
     #    git config receive.denyCurrentBranch updateInstead
     #    mv .hooks/post-update.sample hooks/post-update
@@ -115,6 +117,13 @@ def test_create_as_bare(origin, remote_base_path, public, consumer, tmp_location
     assert_repo_status(ds.path)
 
     # add the ria remote:
+    # Note: For serve_path_via_http to work (which we need later), the directory needs to already exist.
+    #       But by default RIARemote will reject to create the remote structure in an already existing directory,
+    #       that wasn't created by itself (lacks as ria-layout-version file).
+    #       So, we can either configure force-write here or put a version file in it beforehand.
+    #       However, this is specific to the test environment!
+    with open(str(remote_base_path / 'ria-layout-version'), 'w') as f:
+        f.write('1')
     initexternalremote(ds.repo, 'riaremote', 'ria', config={'base-path': str(remote_base_path)})
     # pretty much any annex command that talks to that remote should now trigger the actual creation on the remote end:
     assert_status(
@@ -131,6 +140,10 @@ def test_create_as_bare(origin, remote_base_path, public, consumer, tmp_location
     # Now, let's make the remote end a valid, bare git repository
     eq_(subprocess.run(['git', 'init', '--bare'], cwd=remote_dataset_path).returncode,
         0)
+
+    #subprocess.run(['mv', 'hooks/post-update.sample', 'hooks/post-update'], cwd=remote_dataset_path)
+    #subprocess.run(['git', 'update-server-info'], cwd=remote_dataset_path)
+
     # TODO: we might need "mv .hooks/post-update.sample hooks/post-update", "git update-server-info" as well
     # add as git remote and push everything
     eq_(subprocess.run(['git', 'remote', 'add', 'bare-git', str(remote_dataset_path)], cwd=origin).returncode,
@@ -163,6 +176,31 @@ def test_create_as_bare(origin, remote_base_path, public, consumer, tmp_location
         0)
     eq_(len(ds.repo.whereis(op.join('subdir', 'two'))), 3)
 
-    # Now, let's try make it a data store for datasets available from elsewhere (like github or gitlab):
-
     raise SkipTest("NOT YET DONE")
+    # TODO: Part below still doesn't work. "'storage' is not available" when trying to copy to it. May be the HTTP
+    # Server is not available from within the context of the git-type special remote? Either way, still smells like an
+    # issue with the f****** test setup.
+
+
+
+    # Now, let's try make it a data store for datasets available from elsewhere (like github or gitlab):
+    # For this test, we need a second git remote pointing to remote_dataset_path, but via HTTP.
+    # This is because annex-initremote for a git-type special remote requires a git remote pointing to the same location
+    # and it fails to match local paths. Also doesn't work with file:// scheme.
+    #
+    # TODO: Figure it out in detail. That issue is either a bug or not "real".
+    #
+    # ds.repo._allow_local_urls()
+    # dataset_url = remote_base_url + ds.id[:3] + '/' + ds.id[3:] + '/'
+    # eq_(subprocess.run(['git', 'remote', 'add', 'datasrc', dataset_url],
+    #                    cwd=origin).returncode,
+    #     0)
+    # eq_(subprocess.run(['git', 'annex', 'initremote', 'storage',  'type=git',
+    #                     'location={}'.format(dataset_url), 'autoenable=true'],
+    #                    cwd=origin).returncode,
+    #     0)
+    # assert_status(
+    #     'ok',
+    #     [annexjson2result(r, ds)
+    #      for r in fsck(ds.repo, remote='storage', fast=True)])
+

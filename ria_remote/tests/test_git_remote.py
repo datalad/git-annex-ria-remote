@@ -63,9 +63,9 @@ def test_bare_git(origin, remote_base_path):
 
     # Since we created the remote this particular way instead of letting ria-remote create it, we need to put
     # ria-layout-version files into it. Then we should be able to also add it as a ria-remote.
-    with open(remote_base_path / 'ria-layout-version', 'w') as f:
+    with open(str(remote_base_path / 'ria-layout-version'), 'w') as f:
         f.write('1')
-    with open(bare_repo_path / 'ria-layout-version', 'w') as f:
+    with open(str(bare_repo_path / 'ria-layout-version'), 'w') as f:
         f.write('1')
 
     # Now, add the ria remote:
@@ -78,7 +78,7 @@ def test_bare_git(origin, remote_base_path):
     eq_(len(ds.repo.whereis('one.txt')), 3)
 
     # Now move content from git-remote to local and see it not being available via bare-git anymore
-    eq_(subprocess.run(['git', 'annex', 'move', '--all', '--from=bare-git'], cwd=origin),
+    eq_(subprocess.run(['git', 'annex', 'move', '--all', '--from=bare-git'], cwd=origin).returncode,
         0)
     # ria-remote doesn't know yet:
     eq_(len(ds.repo.whereis('one.txt')), 2)

@@ -159,9 +159,9 @@ def test_version_check(path, objtree):
     assert remote_obj_tree_version_file.exists()
 
     # Currently the content of booth should be "1"
-    with open(remote_ds_tree_version_file, 'r') as f:
+    with open(str(remote_ds_tree_version_file), 'r') as f:
         eq_(f.read(), '1')
-    with open(remote_obj_tree_version_file, 'r') as f:
+    with open(str(remote_obj_tree_version_file), 'r') as f:
         eq_(f.read(), '1')
 
     # Accessing the remote should not yield any output regarding versioning, since it's the "correct" version
@@ -171,7 +171,7 @@ def test_version_check(path, objtree):
         assert not cml.out  # TODO: For some reason didn't get cml.assert_logged to assert "nothing was logged"
 
     # Now fake-change the version
-    with open(remote_obj_tree_version_file, 'w') as f:
+    with open(str(remote_obj_tree_version_file), 'w') as f:
         f.write('2')
 
     # Now we should see a message about it

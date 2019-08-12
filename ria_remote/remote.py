@@ -305,6 +305,7 @@ class SSHRemoteIO(IOBase):
             + [self.ssh.sshri.as_str(),
                '7z', 'x', '-so',
                text_type(archive), text_type(src)]
+
         with open(dst, 'wb') as target_file:
             subprocess.run(
                 cmd,
@@ -576,7 +577,7 @@ class RIARemote(SpecialRemote):
         dsobj_dir, archive_path, key_path = self._get_obj_location(key)
         abs_key_path = dsobj_dir / key_path
         # sadly we have no idea what type of source gave checkpresent->true
-        # we can either repeat the checks, or just make two oportunistic
+        # we can either repeat the checks, or just make two opportunistic
         # attempts (at most)
         try:
             self.io.get(abs_key_path, filename)
@@ -585,7 +586,7 @@ class RIARemote(SpecialRemote):
             try:
                 self.io.get_from_archive(archive_path, key_path, filename)
             except Exception as e2:
-                raise RuntimeError('Failed to key: {}'.format([e1, e2]))
+                raise RemoteError('Failed to key: {}'.format([e1, e2]))
 
     def checkpresent(self, key):
         dsobj_dir, archive_path, key_path = self._get_obj_location(key)
@@ -631,7 +632,7 @@ class RIARemote(SpecialRemote):
         return str(key_path) if self._local_io() \
             else '{}:{}'.format(
                 self.storage_host,
-                sh_quote(str(key_path)),
+                sh_quote(str(key_path)),  # TODO: Shouldn't we report the entire path (i.e. dsobj_dir + key_path)?
         )
 
     def _get_obj_location(self, key):

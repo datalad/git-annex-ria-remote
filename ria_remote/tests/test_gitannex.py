@@ -10,7 +10,7 @@ from ria_remote.tests.utils import (
 
 
 @with_tempfile(mkdir=True)
-@with_tempfile(mkdir=True)
+@with_tempfile()
 def test_gitannex_localio(path, objtree):
     ds = create(path)
     initexternalremote(
@@ -25,7 +25,7 @@ def test_gitannex_localio(path, objtree):
 
 @skip_ssh
 @with_tempfile(mkdir=True)
-@with_tempfile(mkdir=True)
+@with_tempfile()
 def test_gitannex_remoteio(path, objtree):
     ds = create(path)
     initexternalremote(

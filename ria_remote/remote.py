@@ -19,6 +19,7 @@ lgr = logging.getLogger('ria_remote')
 
 # TODO
 # - make archive check optional
+# - move fsck to core
 
 
 def _get_gitcfg(gitdir, key, cfgargs=None):
@@ -110,6 +111,33 @@ class IOBase(object):
         """
         raise NotImplementedError
 
+    def read_file(self, file_path):
+        """Read a remote file's content
+
+        Parameters
+        ----------
+        file_path : Path or str
+          Must be an absolute path
+
+        Returns
+        -------
+        string
+        """
+
+        raise NotImplementedError
+
+    def write_file(self, file_path, content):
+        """Write a remote file
+
+        Parameters
+        ----------
+        file_path : Path or str
+          Must be an absolute path
+        content : str
+        """
+
+        raise NotImplementedError
+
 
 class LocalIO(IOBase):
     """IO operation if the object tree is local (e.g. NFS-mounted)"""
@@ -164,6 +192,17 @@ class LocalIO(IOBase):
             log_stdout=True,
         )
         return loc in out
+
+    def read_file(self, file_path):
+
+        with open(text_type(file_path), 'r') as f:
+            content = f.read()
+        return content
+
+    def write_file(self, file_path, content):
+
+        with open(text_type(file_path), 'w') as f:
+            f.write(content)
 
 
 class NoSTDINSSHConnection(object):
@@ -266,6 +305,7 @@ class SSHRemoteIO(IOBase):
             + [self.ssh.sshri.as_str(),
                '7z', 'x', '-so',
                text_type(archive), text_type(src)]
+
         with open(dst, 'wb') as target_file:
             subprocess.run(
                 cmd,
@@ -275,12 +315,57 @@ class SSHRemoteIO(IOBase):
                 check=True,
             )
 
+    def read_file(self, file_path):
+
+        self.ssh.open()
+        cmd = ['ssh'] + self.ssh._ctrl_options \
+            + [self.ssh.sshri.as_str(),
+               'cat', text_type(file_path)]
+
+        result = subprocess.run(
+            cmd,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            stdin=subprocess.DEVNULL,
+            check=True,
+            # the following is `text` from 3.7 onwards
+            universal_newlines=True,
+        )
+
+        if result.returncode != 0:
+            raise RemoteError("stdout: {}\nstderr: {}".format(result.stdout, result.stderr))
+
+        return result.stdout
+
+    def write_file(self, file_path, content):
+
+        self.ssh.open()
+
+        cmd = ['ssh'] + self.ssh._ctrl_options \
+            + [self.ssh.sshri.as_str(),
+               'cat', '-', '>', text_type(file_path)]
+
+        result = subprocess.run(
+            cmd,
+            input=content,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            check=True,
+            # the following is `text` from 3.7 onwards
+            universal_newlines=True,
+        )
+
+        if result.returncode != 0:
+            raise RemoteError("stdout: {}\nstderr: {}".format(result.stdout, result.stderr))
+
 
 class RIARemote(SpecialRemote):
-    """This is the base class of RIA remotes.
-
-    It cannot be used directly, but see its subclasses.
+    """This is the class of RIA remotes.
     """
+
+    _dataset_tree_version = '1'
+    _object_tree_version = '1'
+
     def __init__(self, annex):
         super(RIARemote, self).__init__(annex)
         self.objtree_path = None
@@ -290,6 +375,10 @@ class RIARemote(SpecialRemote):
         # must be absolute, and POSIX
         # subclass must set this
         self.objtree_base_path = None
+        # by default we can read and write
+        self.read_only = False
+        self.can_notify = None  # to be figured out later, since annex.protocol.extensions is not yet accessible
+        self.force_write = None
 
     def _load_cfg(self, gitdir, name):
         self.storage_host = _get_gitcfg(
@@ -298,12 +387,15 @@ class RIARemote(SpecialRemote):
             gitdir, 'annex.ria-remote.{}.base-path'.format(name))
         self.objtree_base_path = objtree_base_path.strip() \
             if objtree_base_path else objtree_base_path
+        # Whether or not to force writing to the remote. Currently used to overrule write protection due to layout
+        # version mismatch.
+        self.force_write = _get_gitcfg(
+            gitdir, 'annex.ria-remote.{}.force-write'.format(name))
 
     def _verify_config(self, gitdir, fail_noid=True):
         # try loading all needed info from git config
-        cfgname = self.annex.getconfig('cfgname')
-        if cfgname:
-            self._load_cfg(gitdir, cfgname)
+        name = self.annex.getconfig('name')
+        self._load_cfg(gitdir, name)
 
         if not self.objtree_base_path:
             self.objtree_base_path = self.annex.getconfig('base-path')
@@ -326,6 +418,9 @@ class RIARemote(SpecialRemote):
             raise RemoteError(
                 "No archive ID configured. This should not happen.")
 
+        if not self.force_write:
+            self.force_write = self.annex.getconfig('force-write')
+
     def initremote(self):
         # which repo are we talking about
         gitdir = self.annex.getgitdir()
@@ -347,7 +442,101 @@ class RIARemote(SpecialRemote):
         #return self.objtree_base_path.is_dir()
         return not self.storage_host
 
+    def _info(self, msg):
+
+        if self.can_notify:
+            self.annex.info(msg)
+        # TODO: else: if we can't have an actual info message, at least have a debug message
+        #       This probably requires further refurbishment of datalad's capability to deal with such aspects of the
+        #       special remote protocol
+
+    def _set_read_only(self, msg):
+
+        if not self.force_write:
+            self.read_only = True
+            self._info(msg)
+        else:
+            self._info("Was instructed to force write")
+
+    def _check_layout_version(self):
+        """Check whether we can deal with the layout reported by the remote end
+
+        There are two aspects of layout versioning:
+        - the tree to put the datasets in (version recorded in base_path/ria-layout-version)
+        - the tree of the actual annex objects of a particular dataset (version recorded in
+          dataset_somewhere_beneath_base_path/ria-layout-version)
+
+        If the version found on the remote end isn't supported and `force-write` isn't configured,
+        this sets the remote to read-only operation.
+        """
+
+        dataset_tree_version_file = \
+            self.objtree_base_path / 'ria-layout-version'
+        object_tree_version_file = \
+            self.objtree_base_path / self.archive_id[:3] / self.archive_id[3:] / 'ria-layout-version'
+
+        read_only_msg = "Setting remote to read-only usage in order to prevent damage by putting things into an " \
+                        "unknown version of the target layout. You can overrule this by configuring " \
+                        "'annex.ria-remote.<name>.force-write'."
+
+        # TODO: It might be faster to directly try to read it, parse the output to detect non-existence of the file
+        #       and act upon it, rather than having to separate remote calls executed for checking existence and then
+        #       read the content
+
+        # 1. check dataset tree version
+        if not self.io.exists(dataset_tree_version_file):
+            if not self.io.exists(dataset_tree_version_file.parent):
+                # we are first, just put our stamp on it
+                try:
+                    self.io.mkdir(dataset_tree_version_file.parent)
+                    self.io.write_file(dataset_tree_version_file, self._dataset_tree_version)
+                except Exception as e:
+                    raise RemoteError(str(e))
+                    # Note, that we need to fail in any case but in a way appropriate for a special remote. Otherwise
+                    # we get something like a "broken pipe" error, which tells nothing about the issue.
+            else:
+                # directory is there, but no version file. We don't know what that is. Treat the same way as if there
+                # was an unknown version on record
+                self._info("Remote doesn't report any dataset tree version. Consider upgrading git-annex-ria-remote or "
+                           "fix the structure on the remote end.")
+                self._set_read_only(read_only_msg)
+
+        else:
+            remote_dataset_tree_version = self.io.read_file(dataset_tree_version_file)
+            if remote_dataset_tree_version != self._dataset_tree_version:
+                # Note: In later versions, condition might change in order to deal with older versions
+                self._info("Remote dataset tree reports version {}. Supported version is {}. Consider upgrading "
+                           "git-annex-ria-remote or fix the structure on the remote end."
+                           "".format(remote_dataset_tree_version, self._dataset_tree_version))
+                self._set_read_only(read_only_msg)
+
+        # 2. check (annex) object tree version
+        if not self.io.exists(object_tree_version_file):
+            if not self.io.exists(object_tree_version_file.parent):
+                # we are first, just put our stamp on it
+                try:
+                    self.io.mkdir(object_tree_version_file.parent)
+                    self.io.write_file(object_tree_version_file, self._object_tree_version)
+                except Exception as e:
+                    raise RemoteError(str(e))
+                    # Note, that we need to fail in any case but in a way appropriate for a special remote. Otherwise
+                    # we get something like a "broken pipe" error, which tells nothing about the issue.
+            else:
+                self._info("Remote doesn't report any dataset tree version. Consider upgrading git-annex-ria-remote or "
+                           "fix the structure on the remote end.")
+                self._set_read_only(read_only_msg)
+        else:
+            remote_object_tree_version = self.io.read_file(object_tree_version_file)
+            if remote_object_tree_version != self._object_tree_version:
+                self._info("Remote object tree reports version {}. Supported version is {}. Consider upgrading "
+                           "git-annex-ria-remote.".format(remote_object_tree_version, self._object_tree_version))
+                self._set_read_only(read_only_msg)
+
     def prepare(self):
+
+        # can we use self.annex.info() for sending user output to annex?
+        self.can_notify = "INFO" in self.annex.protocol.extensions
+
         gitdir = self.annex.getgitdir()
         self._verify_config(gitdir)
 
@@ -367,7 +556,13 @@ class RIARemote(SpecialRemote):
             if self._local_io() else self.storage_host,
         }
 
+        self._check_layout_version()
+
     def transfer_store(self, key, filename):
+        if self.read_only:
+            raise RemoteError("Remote was set to read-only. "
+                              "Configure 'ria-remote.<name>.force-write' to overrule this.")
+
         dsobj_dir, archive_path, key_path = self._get_obj_location(key)
         key_path = dsobj_dir / key_path
         self.io.mkdir(key_path.parent)
@@ -382,7 +577,7 @@ class RIARemote(SpecialRemote):
         dsobj_dir, archive_path, key_path = self._get_obj_location(key)
         abs_key_path = dsobj_dir / key_path
         # sadly we have no idea what type of source gave checkpresent->true
-        # we can either repeat the checks, or just make two oportunistic
+        # we can either repeat the checks, or just make two opportunistic
         # attempts (at most)
         try:
             self.io.get(abs_key_path, filename)
@@ -391,7 +586,7 @@ class RIARemote(SpecialRemote):
             try:
                 self.io.get_from_archive(archive_path, key_path, filename)
             except Exception as e2:
-                raise RuntimeError('Failed to key: {}'.format([e1, e2]))
+                raise RemoteError('Failed to key: {}'.format([e1, e2]))
 
     def checkpresent(self, key):
         dsobj_dir, archive_path, key_path = self._get_obj_location(key)
@@ -407,6 +602,10 @@ class RIARemote(SpecialRemote):
             return self.io.in_archive(archive_path, key_path)
 
     def remove(self, key):
+        if self.read_only:
+            raise RemoteError("Remote was set to read-only. "
+                              "Configure 'ria-remote.<name>.force-write' to overrule this.")
+
         dsobj_dir, archive_path, key_path = self._get_obj_location(key)
         key_path = dsobj_dir / key_path
         if self.io.exists(key_path):
@@ -433,13 +632,16 @@ class RIARemote(SpecialRemote):
         return str(key_path) if self._local_io() \
             else '{}:{}'.format(
                 self.storage_host,
-                sh_quote(str(key_path)),
+                sh_quote(str(key_path)),  # TODO: Shouldn't we report the entire path (i.e. dsobj_dir + key_path)?
         )
 
     def _get_obj_location(self, key):
+        # Note: Changes to this method may require an update of RIARemote._layout_version
+
         key_dir = self.annex.dirhash_lower(key)
-        dsobj_dir = self.objtree_base_path / self.archive_id[:3] / self.archive_id[3:]
-        archive_path = dsobj_dir / 'archive.7z'
+        dsgit_dir = self.objtree_base_path / self.archive_id[:3] / self.archive_id[3:]
+        archive_path = dsgit_dir / 'archives' / 'archive.7z'
+        dsobj_dir = dsgit_dir / 'annex' / 'objects'
         # double 'key' is not a mistake, but needed to achieve the exact same
         # layout as the 'directory'-type special remote
         key_path = Path(key_dir) / key / key

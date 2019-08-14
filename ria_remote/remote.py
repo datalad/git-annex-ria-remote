@@ -35,7 +35,7 @@ def _get_gitcfg(gitdir, key, cfgargs=None):
         return subprocess.check_output(
             cmd,
             # yield text
-            universal_newlines=True)
+            universal_newlines=True).strip()
     except Exception:
         lgr.debug(
             "Failed to obtain config '%s' at %s",

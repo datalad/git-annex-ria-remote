@@ -409,8 +409,13 @@ class RIARemote(SpecialRemote):
             raise RemoteError(
                 'Non-absolute object tree base path configuration')
 
+        # Note: Special value '0' is replaced by None only after checking the repository's annex config.
+        # This is to uniformly handle '0' and None later on, but let a user's config '0' overrule what's
+        # stored by git-annex.
         if not self.storage_host:
             self.storage_host = self.annex.getconfig('ssh-host')
+        elif self.storage_host == '0':
+            self.storage_host = None
 
         # go look for an ID
         self.archive_id = self.annex.getconfig('archive-id')
@@ -437,7 +442,7 @@ class RIARemote(SpecialRemote):
         # let's not make this decision dependent on the existance
         # of a directory the matches the name of the configured
         # object tree base dir. Such a match could be pure
-        # conincidence. Instead, let's do remote whenever there
+        # coincidence. Instead, let's do remote whenever there
         # is a remote host configured
         #return self.objtree_base_path.is_dir()
         return not self.storage_host

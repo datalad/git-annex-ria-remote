@@ -293,7 +293,7 @@ class SSHRemoteIO(IOBase):
             stdout=subprocess.PIPE,
             stderr=subprocess.DEVNULL,
             stdin=subprocess.DEVNULL,
-            check=True,
+            check=False,
             # the following is `text` from 3.7 onwards
             universal_newlines=True,
         )

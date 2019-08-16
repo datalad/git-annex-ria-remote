@@ -181,6 +181,9 @@ class LocalIO(IOBase):
         return path.exists()
 
     def in_archive(self, archive_path, file_path):
+        if not archive_path.exists():
+            # no archive, not file
+            return False
         loc = text_type(file_path)
         from datalad.cmd import Runner
         runner = Runner()
@@ -290,7 +293,7 @@ class SSHRemoteIO(IOBase):
             stdout=subprocess.PIPE,
             stderr=subprocess.DEVNULL,
             stdin=subprocess.DEVNULL,
-            check=True,
+            check=False,
             # the following is `text` from 3.7 onwards
             universal_newlines=True,
         )
@@ -599,12 +602,12 @@ class RIARemote(SpecialRemote):
         if self.io.exists(abs_key_path):
             # we have an actual file for this key
             return True
-        elif not self.io.exists(archive_path):
-            # TODO honor future 'archive-mode' flag
-            # we have no archive, no need to look any further
-            return False
-        else:
-            return self.io.in_archive(archive_path, key_path)
+        # do not make a careful check whether an archive exists, because at
+        # present this requires an additional SSH call for remote operations
+        # which may be rather slow. Instead just try to run 7z on it and let
+        # it fail if no archive is around
+        # TODO honor future 'archive-mode' flag
+        return self.io.in_archive(archive_path, key_path)
 
     def remove(self, key):
         if self.read_only:

@@ -35,7 +35,7 @@ def _get_gitcfg(gitdir, key, cfgargs=None):
         return subprocess.check_output(
             cmd,
             # yield text
-            universal_newlines=True)
+            universal_newlines=True).strip()
     except Exception:
         lgr.debug(
             "Failed to obtain config '%s' at %s",
@@ -409,8 +409,13 @@ class RIARemote(SpecialRemote):
             raise RemoteError(
                 'Non-absolute object tree base path configuration')
 
+        # Note: Special value '0' is replaced by None only after checking the repository's annex config.
+        # This is to uniformly handle '0' and None later on, but let a user's config '0' overrule what's
+        # stored by git-annex.
         if not self.storage_host:
             self.storage_host = self.annex.getconfig('ssh-host')
+        elif self.storage_host == '0':
+            self.storage_host = None
 
         # go look for an ID
         self.archive_id = self.annex.getconfig('archive-id')
@@ -437,7 +442,7 @@ class RIARemote(SpecialRemote):
         # let's not make this decision dependent on the existance
         # of a directory the matches the name of the configured
         # object tree base dir. Such a match could be pure
-        # conincidence. Instead, let's do remote whenever there
+        # coincidence. Instead, let's do remote whenever there
         # is a remote host configured
         #return self.objtree_base_path.is_dir()
         return not self.storage_host
@@ -635,13 +640,22 @@ class RIARemote(SpecialRemote):
                 sh_quote(str(key_path)),  # TODO: Shouldn't we report the entire path (i.e. dsobj_dir + key_path)?
         )
 
+    @staticmethod
+    def get_layout_locations(base_path, dsid, key):
+        # Notes:
+        #   - changes to this method may require an update of RIARemote._layout_version
+        #   - `key` parameter included, since locations ('archive' for example) might depend on it in the future
+
+        dsgit_dir = base_path / dsid[:3] / dsid[3:]
+        archive_path = dsgit_dir / 'archives' / 'archive.7z'
+        dsobj_dir = dsgit_dir / 'annex' / 'objects'
+        return dsgit_dir, archive_path, dsobj_dir
+
     def _get_obj_location(self, key):
         # Note: Changes to this method may require an update of RIARemote._layout_version
 
+        dsgit_dir, archive_path, dsobj_dir = self.get_layout_locations(self.objtree_base_path, self.archive_id, key)
         key_dir = self.annex.dirhash_lower(key)
-        dsgit_dir = self.objtree_base_path / self.archive_id[:3] / self.archive_id[3:]
-        archive_path = dsgit_dir / 'archives' / 'archive.7z'
-        dsobj_dir = dsgit_dir / 'annex' / 'objects'
         # double 'key' is not a mistake, but needed to achieve the exact same
         # layout as the 'directory'-type special remote
         key_path = Path(key_dir) / key / key

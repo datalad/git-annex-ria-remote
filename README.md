@@ -53,29 +53,36 @@ install the latest version of `ria-remote` from
 ## Use
 
 A `ria` special remote is set up like any other "external"-type remote via the
-git-annex `initremote` command. There is a single additional required argument
-in contrast to the standard set: `base-path` which determines the base
+git-annex `initremote` command. There is a single additional required setting
+in contrast to the standard ones: `base-path` which determines the base
 directory where the special remote places its keys:
 
     git annex initremote myremote \
         type=external encryption=none \
         externaltype=ria base-path=/tmp/basepath/here
 
+Alternatively, the `base-path` can also be provided via a Git configuration
+variable by setting `annex.ria-remote.<remote>.base-path` (in this example
+`annex.ria-remote.myremote.base-path`).
+
 The remote is now ready for use. Any directories will be created on demand.
-The key store for repository will be located underneath the given base path,
+The key store for a repository will be located underneath the given base path,
 in a structure like this:
 
     /tmp/basepath/here
     └── 2e5
         └── 24934-a09e-11e9-8503-f0d5bf7b5561
-            └── ff4
-                └── c57
-                    └── MD5E-s4--ba1f2511fc30423bdbb183fe33f3dd0f
-                        └── MD5E-s4--ba1f2511fc30423bdbb183fe33f3dd0f
+            └── annex
+                └── objects
+                    └── ff4
+                        └── c57
+                            └── MD5E-s4--ba1f2511fc30423bdbb183fe33f3dd0f
+                                └── MD5E-s4--ba1f2511fc30423bdbb183fe33f3dd0f
 
 where the first two levels represent a tree structure that can host key stores
 for any number of repositories, and the remaining level are identical to
-the organization of a `directory`-type git-annex special remote.
+the organization of a bare Git repository with the annex object tree following
+the layout of a `directory`-type git-annex special remote.
 The directory names for the two top-most levels are build from the git-annex
 UUID for the special remote, or a DataLad dataset UUID, if available.
 

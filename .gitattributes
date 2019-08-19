@@ -1,1 +1,1 @@
-ria_remote/version.py export-subst
+ria_remote/_version.py export-subst

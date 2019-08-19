@@ -1,2 +1,2 @@
 include versioneer.py
-include ria_remote/version.py
+include ria_remote/_version.py

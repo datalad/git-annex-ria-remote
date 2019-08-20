@@ -1,3 +1,18 @@
+0.4 (Aug 20, 2019) -- Tests!
+
+- Package now called 'ria-remote' on PyPi
+- Make data store layout compatible with a co-located bare repository,
+  by moving the object tree under 'annex/objects'
+- Add layout version files to the global data store, and to each
+  dataset directory. For any newly created store they will be added
+  automatically. For existing stores the special remote will refuse
+  to write into unversioned locations, unless forced
+  (config variable `force-write`)
+- Fix issue with inappropriate exception type that `annexremote` did not
+  convert into a proper message for git-annex
+- Reduce number of required SSH invokations for 'checkpresent'
+- Significantly expanded test coverage for various use cases
+
 0.3 (Jul 09, 2019) -- ready?
 
 - All functionality implemented

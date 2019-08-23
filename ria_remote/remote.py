@@ -5,7 +5,7 @@ import os.path as op
 from six import (
     text_type,
 )
-from pathlib import(
+from pathlib import (
     Path,
     PosixPath,
 )
@@ -13,6 +13,11 @@ import shutil
 import tempfile
 from shlex import quote as sh_quote
 import subprocess
+from time import (
+    sleep,
+    time
+)
+from fabric import Connection
 
 import logging
 lgr = logging.getLogger('ria_remote')
@@ -233,16 +238,21 @@ class SSHRemoteIO(IOBase):
           on.
         """
 
-        from fabric import Connection
-
         try:
             self._con = Connection(host)
             self._session = self._con.create_session()
             self._session.invoke_shell()
-            # catch login message (and throw away for now)
-            while self._session.recv_ready():
-                self._session.recv(1000)
 
+            # TODO: Figure whether use of sftp (already implicit via Connection.put/get) actually
+            # shares the transport layer with the shell. If all the combined magic of fabric+paramiko
+            # does re-open/authenticate all the time, then we didn't win anything.
+            #
+            # We could then either use two connections or figure how to do everything via only one of those
+            # approaches.
+            # self._sftp_client = self._con.sftp()
+
+            # catch login message (and throw away for now)
+            self._empty_buffers()
         except Exception as e:
             raise RemoteError(str(e))
 
@@ -260,18 +270,18 @@ class SSHRemoteIO(IOBase):
         self.ssh.open()
         self.nostdin_ssh = NoSTDINSSHConnection(self.ssh)
 
-    def _run(self, cmd):
+    def _empty_buffers(self):
+        # TODO: What if we expect something and actually need to wait a bit if not ready yet?
+        #       option to wait for X seconds and make X configurable per remote? Then raising if still nothing?
 
-        # empty buffers:
         while self._session.recv_ready():
             self._session.recv(1000)
         while self._session.recv_stderr_ready():
             self._session.recv_stderr(1000)
 
-        if not self._session.active:
-            raise RemoteError("Connection not active")
-        if not self._session.send_ready():
-            raise RemoteError("Connection not ready for sending")
+    def _run(self, cmd):
+
+        self._empty_buffers()
 
         wrapped_cmd = 'echo "ria-remote: start" && ' + cmd + \
                       ' && echo "ria-remote: end - ok" || echo "ria-remote: end - fail"\n'
@@ -281,36 +291,40 @@ class SSHRemoteIO(IOBase):
         except Exception as e:
             raise RemoteError(str(e))
 
-        # TODO: consider recv_stderr() & Co for a more sophisticated approach
-        output = b""
-        from time import sleep
-        if not self._session.recv_ready():
-            sleep(0.1)
-        while self._session.recv_ready():
-            output += self._session.recv(1000)
+        stdout = b""
+        waited = 0.0
+        while not self._session.recv_ready() and waited < 1:  # TODO: config for max waiting time?
+            sleep(0.05)
+            waited += 0.05
 
-        if not output:
+        if not self._session.recv_ready() and waited >= 1:
+            raise RemoteError("No stdout from {}.".format(wrapped_cmd.replace('\n', '\\n')))
+
+        while self._session.recv_ready():
+            stdout += self._session.recv(1000)
+
+        if not stdout:
             err = b""
             while self._session.recv_stderr_ready():
                 err += self._session.recv_stderr(1000)
             err = err.decode() if err else err
             raise RemoteError("No stdout from {}. stderr: {}".format(wrapped_cmd.strip(), err.replace('\n', '\\n') if err else ""))
 
-        output = output.decode()
+        stdout = stdout.decode()
 
         # We ran a single command. So, the output should start with our marker and end with one of them
-        if not output.startswith("ria-remote: start"):
+        if not stdout.startswith("ria-remote: start"):
             # there's something fundamentally wrong
-            raise RemoteError("Missing ria-remote start marker in: {}".format(output))
-        if output.strip().endswith("ria-remote: end - ok"):
+            raise RemoteError("Missing ria-remote start marker in: {} cmd: {}".format(stdout.replace('\n', '\\n'), wrapped_cmd.strip()))
+        if stdout.strip().endswith("ria-remote: end - ok"):
             # all good
-            return output.strip().lstrip("ria-remote: start").rstrip("ria-remote: end - ok").strip()
-        if output.strip().endswith("ria-remote: end - fail"):
+            return stdout.strip().lstrip("ria-remote: start").rstrip("ria-remote: end - ok").strip()
+        if stdout.strip().endswith("ria-remote: end - fail"):
             # TODO: We might want a dedicated exception to distinguish non-zero exit from
             # more severe errors
             raise RemoteError("{} failed: {}".format(
                 cmd,
-                output.lstrip("ria-remote: start\n").rstrip("ria-remote: end - fail"))
+                stdout.lstrip("ria-remote: start\n").rstrip("ria-remote: end - fail"))
             )
 
     def mkdir(self, path):

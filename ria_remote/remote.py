@@ -223,6 +223,7 @@ class SSHRemoteIO(IOBase):
 
     It doesn't even think about a windows server.
     """
+
     def __init__(self, host):
         """
         Parameters
@@ -231,6 +232,22 @@ class SSHRemoteIO(IOBase):
           SSH-accessible host(name) to perform remote IO operations
           on.
         """
+
+        from fabric import Connection
+
+        try:
+            self._con = Connection(host)
+            self._session = self._con.create_session()
+            self._session.invoke_shell()
+            # catch login message (and throw away for now)
+            while self._session.recv_ready():
+                self._session.recv(1000)
+
+        except Exception as e:
+            raise RemoteError(str(e))
+
+        # To be removed:
+
         from datalad.support.sshconnector import SSHManager
         # connection manager -- we don't have to keep it around, I think
         self.sshmanager = SSHManager()
@@ -243,107 +260,247 @@ class SSHRemoteIO(IOBase):
         self.ssh.open()
         self.nostdin_ssh = NoSTDINSSHConnection(self.ssh)
 
+    def _run(self, cmd):
+
+        # empty buffer:
+        while self._session.recv_ready():
+            self._session.recv(1000)
+
+        wrapped_cmd = 'echo "ria-remote: start" && ' + cmd + \
+                      ' && echo "ria-remote: end - ok" || echo "ria-remote: end - fail"\n'
+
+        try:
+            self._session.sendall(wrapped_cmd)
+        except Exception as e:
+            raise RemoteError(str(e))
+
+        # TODO: consider recv_stderr() & Co for a more sophisticated approach
+        output = b""
+        from time import sleep
+        if not self._session.recv_ready():
+            sleep(0.1)
+        while self._session.recv_ready():
+            output += self._session.recv(1000)
+
+        if not output:
+            raise RemoteError("No output from {}".format(wrapped_cmd))
+        output = output.decode()
+
+        # We ran a single command. So, the output should start with our marker and end with one of them
+        if not output.startswith("ria-remote: start"):
+            # there's something fundamentally wrong
+            raise RemoteError("Missing ria-remote start marker in: {}".format(output))
+        if output.strip().endswith("ria-remote: end - ok"):
+            # all good
+            return output.strip().lstrip("ria-remote: start").rstrip("ria-remote: end - ok").strip()
+        if output.strip().endswith("ria-remote: end - fail"):
+            # TODO: We might want a dedicated exception to distinguish non-zero exit from
+            # more severe errors
+            raise RemoteError("{} failed: {}".format(
+                cmd,
+                output.lstrip("ria-remote: start\n").rstrip("ria-remote: end - fail"))
+            )
+
     def mkdir(self, path):
-        self.nostdin_ssh('mkdir -p {}'.format(sh_quote(str(path))))
+        self._run('mkdir -p {}'.format(sh_quote(str(path))))
 
     def put(self, src, dst):
-        self.ssh.put(str(src), str(dst))
+        self._con.put(str(src), remote=str(dst))
 
     def get(self, src, dst):
-        self.ssh.get(str(src), str(dst))
+        self._con.get(str(src), local=str(dst))
 
     def rename(self, src, dst):
-        self.nostdin_ssh('mv {} {}'.format(
+        self._run('mv {} {}'.format(
             sh_quote(str(src)),
             sh_quote(str(dst)))
         )
 
     def remove(self, path):
-        self.nostdin_ssh('rm {}'.format(sh_quote(str(path))))
+        self._run('rm {}'.format(sh_quote(str(path))))
 
     def remove_dir(self, path):
-        self.nostdin_ssh('rmdir {}'.format(sh_quote(str(path))))
+        self._run('rmdir {}'.format(sh_quote(str(path))))
 
     def exists(self, path):
         try:
-            out, err = self.nostdin_ssh(
-                'test -e {}'.format(sh_quote(str(path)))
-            )
+            self._run('test -e {}'.format(sh_quote(str(path))))
             return True
-        except Exception as e:
-            # non-zero exit code gives CommandError
-            # do not bother checking for this precise exception to avoid
-            # import, should not matter why it crashes
+        except RemoteError as e:
             return False
 
     def in_archive(self, archive_path, file_path):
         loc = text_type(file_path)
         # query 7z for the specific object location, keeps the output
         # lean, even for big archives
-        # bypass most of datalad's code to be able to use subprocess
-        # directly
-        # this requires python 3.5
-        self.ssh.open()
-        cmd = ['ssh'] + self.ssh._ctrl_options \
-            + [self.ssh.sshri.as_str(),
-               '7z', 'l',
-               text_type(archive_path), loc]
-        done = subprocess.run(
-            cmd,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.DEVNULL,
-            stdin=subprocess.DEVNULL,
-            check=False,
-            # the following is `text` from 3.7 onwards
-            universal_newlines=True,
-        )
-        return loc in done.stdout
+        try:
+            out = self._run('7z l {} {}'.format(
+                text_type(archive_path),
+                loc
+            ))
+        except RemoteError:
+            # TODO: Have something like RemoteExecutionFailed or attributes to an exception class, that would allow to
+            #       distinguish kind of errors, so we can either raise RemoteError or return False
+            return False
+        return loc in out
 
     def get_from_archive(self, archive, src, dst):
-        # bypass most of datalad's code to be able to use subprocess
-        # directly
-        # this requires python 3.5
-        self.ssh.open()
-        cmd = ['ssh'] + self.ssh._ctrl_options \
-            + [self.ssh.sshri.as_str(),
-               '7z', 'x', '-so',
-               text_type(archive), text_type(src)]
 
+        # TODO: The other way around: markers to stderr.
+
+        cmd = '7z x -so {} {} 1>&2'.format(text_type(archive), text_type(src))
+        wrapped_cmd = 'echo "ria-remote: start" && ' + cmd + \
+                      ' && echo "ria-remote: end - ok" || echo "ria-remote: end - fail"'
+
+        self._session.send(wrapped_cmd)
+
+        # write whatever comes via stderr
+        # TODO: There likely is a way to do that via some StringIO adapter thingy or similar
         with open(dst, 'wb') as target_file:
-            subprocess.run(
-                cmd,
-                stdout=target_file,
-                stdin=subprocess.DEVNULL,
-                # does not seem to exit non-zero if file not in archive though
-                check=True,
-            )
+
+            from time import sleep
+            if not self._session.recv_stderr_ready():
+                sleep(0.1)
+
+            while self._session.recv_stderr_ready():
+                target_file.write(self._session.recv_stderr(1000))
+
+        # get stdout
+        output = b""
+        while self._session.recv_ready():
+            output += self._session.recv(1000)
+
+        # now, check stdout
+        if not output:
+            raise RemoteError("No output from {}".format(wrapped_cmd))
+        output = output.decode()
+        output = output.strip()
+
+        if not output.startswith("ria-remote: start"):
+            raise RemoteError("{} failed to start: {}".format(cmd, output))
+        output = output.lstrip("ria-remote: start")
+
+        if output.endswith("ria-remote: end - ok"):
+            output = output.rstrip("ria-remote: end - ok")
+        elif "ria-remote: end - fail" in output:
+            output = output.rstrip("ria-remote: end - fail")
+            raise RemoteError("Failed to write to {}".format(text_type(dst)))
+        else:
+            raise RemoteError("THIS SHOULD NEVER HAPPEN")
+
+        return output
+
+
+        # # bypass most of datalad's code to be able to use subprocess
+        # # directly
+        # # this requires python 3.5
+        # self.ssh.open()
+        # cmd = ['ssh'] + self.ssh._ctrl_options \
+        #     + [self.ssh.sshri.as_str(),
+        #        '7z', 'x', '-so',
+        #        text_type(archive), text_type(src)]
+        #
+        # with open(dst, 'wb') as target_file:
+        #     subprocess.run(
+        #         cmd,
+        #         stdout=target_file,
+        #         stdin=subprocess.DEVNULL,
+        #         # does not seem to exit non-zero if file not in archive though
+        #         check=True,
+        #     )
 
     def read_file(self, file_path):
 
-        self.ssh.open()
-        cmd = ['ssh'] + self.ssh._ctrl_options \
-            + [self.ssh.sshri.as_str(),
-               'cat', text_type(file_path)]
+        # self.ssh.open()
+        # cmd = ['ssh'] + self.ssh._ctrl_options \
+        #     + [self.ssh.sshri.as_str(),
+        #        'cat', text_type(file_path)]
+        #
+        # result = subprocess.run(
+        #     cmd,
+        #     stdout=subprocess.PIPE,
+        #     stderr=subprocess.PIPE,
+        #     stdin=subprocess.DEVNULL,
+        #     check=False,
+        #     # the following is `text` from 3.7 onwards
+        #     universal_newlines=True,
+        # )
+        #
+        # if result.returncode != 0:
+        #     raise RemoteError("read_file: stdout: {} stderr: {}".format(result.stdout, result.stderr))
+        #
+        # return result.stdout
 
-        result = subprocess.run(
-            cmd,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            stdin=subprocess.DEVNULL,
-            check=True,
-            # the following is `text` from 3.7 onwards
-            universal_newlines=True,
-        )
+        cmd = 'cat {}'.format(text_type(file_path))
+        wrapped_cmd = 'echo "ria-remote: start" && ' + cmd + \
+                      ' && echo "ria-remote: end - ok" || echo "ria-remote: end - fail"\n'
 
-        if result.returncode != 0:
-            raise RemoteError("stdout: {}\nstderr: {}".format(result.stdout, result.stderr))
+        self._session.sendall(wrapped_cmd)
+        from time import sleep
+        if not self._session.recv_ready():
+            sleep(0.1)
 
-        return result.stdout
+        output = b""
+        while self._session.recv_ready():
+            output += self._session.recv(1000)
+        if not output:
+            raise RemoteError("No output from {}".format(wrapped_cmd))
+        output = output.decode()
+        output = output.strip()
+
+        if not output.startswith("ria-remote: start"):
+            raise RemoteError("{} failed to start: {}".format(cmd, output))
+        output = output.lstrip("ria-remote: start")
+
+        if output.endswith("ria-remote: end - ok"):
+            output = output.rstrip("ria-remote: end - ok")
+        elif "ria-remote: end - fail" in output:
+            output = output.rstrip("ria-remote: end - fail")
+            raise RemoteError("Failed to read from {}".format(text_type(file_path)))
+        else:
+            raise RemoteError("THIS SHOULD NEVER HAPPEN")
+
+        return output
 
     def write_file(self, file_path, content):
 
-        self.ssh.open()
 
+        # # Note: This doesn't work. We want to write to cat's stdin here (which is fine), but this can't reach EOF. We
+        # # don't want to close stdin of the entire remote shell, though. Don't see a solution for that ATM.
+        #
+        # cmd = 'cat - > {}'.format(text_type(file_path))
+        # wrapped_cmd = 'echo "ria-remote: start" && ' + cmd + \
+        #               ' && echo "ria-remote: end - ok" || echo "ria-remote: end - fail"\n'
+        #
+        # self._session.sendall(wrapped_cmd)
+        #
+        # # we expect the start marker to be there:
+        # from time import sleep
+        # if not self._session.recv_ready():
+        #     sleep(0.1)
+        # output = self._session.recv(1000)
+        # output = output.decode()
+        # if not output.strip() == "ria-remote: start":
+        #     raise RemoteError("{} did not start properly: {}".format(wrapped_cmd.replace('\n', '\\n'),
+        #                                                              output.replace('\n', '\\n')))
+        #
+        #
+        # self._session.sendall(content)
+        # if not self._session.recv_ready():
+        #     sleep(0.2)
+        # output = b""
+        # while self._session.recv_ready():
+        #     output += self._session.recv(1000)
+        # if output is None:
+        #     raise RemoteError("No output from {}".format(wrapped_cmd.replace('\n', '\\n')))
+        # output = output.decode()
+        #
+        # if not output.strip().endswith("ria-remote: end - ok"):
+        #     raise RemoteError("Failed to write file: {}".format(output.replace('\n', '\\n')))
+
+
+
+        self.ssh.open()
         cmd = ['ssh'] + self.ssh._ctrl_options \
             + [self.ssh.sshri.as_str(),
                'cat', '-', '>', text_type(file_path)]
@@ -353,13 +510,13 @@ class SSHRemoteIO(IOBase):
             input=content,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
-            check=True,
+            check=False,
             # the following is `text` from 3.7 onwards
             universal_newlines=True,
         )
 
         if result.returncode != 0:
-            raise RemoteError("stdout: {}\nstderr: {}".format(result.stdout, result.stderr))
+            raise RemoteError("write_file: stdout: {} stderr: {}".format(result.stdout, result.stderr))
 
 
 class RIARemote(SpecialRemote):
@@ -510,7 +667,7 @@ class RIARemote(SpecialRemote):
                 self._set_read_only(read_only_msg)
 
         else:
-            remote_dataset_tree_version = self.io.read_file(dataset_tree_version_file)
+            remote_dataset_tree_version = self.io.read_file(dataset_tree_version_file).strip()
             if remote_dataset_tree_version != self._dataset_tree_version:
                 # Note: In later versions, condition might change in order to deal with older versions
                 self._info("Remote dataset tree reports version {}. Supported version is {}. Consider upgrading "
@@ -530,11 +687,11 @@ class RIARemote(SpecialRemote):
                     # Note, that we need to fail in any case but in a way appropriate for a special remote. Otherwise
                     # we get something like a "broken pipe" error, which tells nothing about the issue.
             else:
-                self._info("Remote doesn't report any dataset tree version. Consider upgrading git-annex-ria-remote or "
+                self._info("Remote doesn't report any object tree version. Consider upgrading git-annex-ria-remote or "
                            "fix the structure on the remote end.")
                 self._set_read_only(read_only_msg)
         else:
-            remote_object_tree_version = self.io.read_file(object_tree_version_file)
+            remote_object_tree_version = self.io.read_file(object_tree_version_file).strip()
             if remote_object_tree_version != self._object_tree_version:
                 self._info("Remote object tree reports version {}. Supported version is {}. Consider upgrading "
                            "git-annex-ria-remote.".format(remote_object_tree_version, self._object_tree_version))

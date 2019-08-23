@@ -262,9 +262,16 @@ class SSHRemoteIO(IOBase):
 
     def _run(self, cmd):
 
-        # empty buffer:
+        # empty buffers:
         while self._session.recv_ready():
             self._session.recv(1000)
+        while self._session.recv_stderr_ready():
+            self._session.recv_stderr(1000)
+
+        if not self._session.active:
+            raise RemoteError("Connection not active")
+        if not self._session.send_ready():
+            raise RemoteError("Connection not ready for sending")
 
         wrapped_cmd = 'echo "ria-remote: start" && ' + cmd + \
                       ' && echo "ria-remote: end - ok" || echo "ria-remote: end - fail"\n'
@@ -283,7 +290,12 @@ class SSHRemoteIO(IOBase):
             output += self._session.recv(1000)
 
         if not output:
-            raise RemoteError("No output from {}".format(wrapped_cmd))
+            err = b""
+            while self._session.recv_stderr_ready():
+                err += self._session.recv_stderr(1000)
+            err = err.decode() if err else err
+            raise RemoteError("No stdout from {}. stderr: {}".format(wrapped_cmd.strip(), err.replace('\n', '\\n') if err else ""))
+
         output = output.decode()
 
         # We ran a single command. So, the output should start with our marker and end with one of them

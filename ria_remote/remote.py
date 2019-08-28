@@ -258,7 +258,7 @@ class SSHRemoteIO(IOBase):
             )
             self.ssh.open()
             # open a remote shell
-            cmd = ['ssh'] + self.ssh._ctrl_options + [self.ssh.sshri.as_str()]
+            cmd = ['ssh'] + self.ssh._ssh_args + [self.ssh.sshri.as_str()]
             self.shell = subprocess.Popen(cmd, stderr=subprocess.PIPE, stdout=subprocess.PIPE, stdin=subprocess.PIPE)
             # swallow login message(s):
             self.shell.stdin.write(b"echo RIA-REMOTE-LOGIN-END\n")

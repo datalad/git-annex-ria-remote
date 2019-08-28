@@ -290,7 +290,7 @@ class SSHRemoteIO(IOBase):
 
     def _get_download_size_from_key(self, key):
         # TODO: datalad's AnnexRepo.get_size_from_key() is not correct/not fitting. Move there eventually.
-        # TODO:
+        # TODO: this method can be more compact. we prob. don't need particularly elaborated error distinction
 
         # see: https://git-annex.branchable.com/internals/key_format/
         key_parts = key.split('--')
@@ -360,6 +360,11 @@ class SSHRemoteIO(IOBase):
     def get(self, src, dst):
         # TODO: see get_from_archive()
 
+        # TODO: Currently we will hang forever if the file isn't readable and it's supposed size is bigger than whatever
+        #       cat spits out on stdout. This is because we don't notice that cat has exited non-zero.
+        #       We could have end marker on stderr instead, but then we need to empty stderr beforehand to not act upon
+        #       output from earlier calls. This is a problem with blocking reading, since we need to make sure there's
+        #       actually something to read in any case.
         cmd = 'cat {}'.format(text_type(src))
         self.shell.stdin.write(cmd.encode())
         self.shell.stdin.write(b"\n")
@@ -372,9 +377,6 @@ class SSHRemoteIO(IOBase):
         except RemoteError as e:
             raise RemoteError("src: {}".format(text_type(src)) + str(e))
 
-        if any(p.startswith('S') for p in key.split('--').split('-')):
-            raise RemoteError("size: {}, key: {}".format(size, key))
-
         if size is None:
             # rely on SCP for now
             self.ssh.get(str(src), str(dst))
@@ -382,8 +384,8 @@ class SSHRemoteIO(IOBase):
 
         with open(dst, 'wb') as target_file:
             bytes_received = 0
-            while bytes_received < size:  # TODO: some abortion criteria? check stderr in addition?
-                c = self.shell.stdout.read1(1000)
+            while bytes_received < size:  # TODO: some additional abortion criteria? check stderr in addition?
+                c = self.shell.stdout.read1(1024) #min(size, size - bytes_received))
                 if c:
                     bytes_received += len(c)
                     target_file.write(c)
@@ -457,6 +459,9 @@ class SSHRemoteIO(IOBase):
         return out
 
     def write_file(self, file_path, content):
+
+        if not content.endswith('\n'):
+            content += '\n'
 
         cmd = "echo \"{}\" > {}".format(content, text_type(file_path))
         try:

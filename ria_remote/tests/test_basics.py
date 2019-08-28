@@ -172,7 +172,7 @@ def test_version_check(path, objtree):
 
     # Now fake-change the version
     with open(str(remote_obj_tree_version_file), 'w') as f:
-        f.write('2')
+        f.write('2\n')
 
     # Now we should see a message about it
     with swallow_logs(new_level=logging.INFO) as cml:

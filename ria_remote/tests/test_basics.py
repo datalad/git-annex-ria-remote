@@ -160,9 +160,9 @@ def test_version_check(path, objtree):
 
     # Currently the content of booth should be "1"
     with open(str(remote_ds_tree_version_file), 'r') as f:
-        eq_(f.read(), '1')
+        eq_(f.read().strip(), '1')
     with open(str(remote_obj_tree_version_file), 'r') as f:
-        eq_(f.read(), '1')
+        eq_(f.read().strip(), '1')
 
     # Accessing the remote should not yield any output regarding versioning, since it's the "correct" version
     # Note that "fsck" is an arbitrary choice. We need just something to talk to the special remote

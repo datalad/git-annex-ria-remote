@@ -1,23 +1,16 @@
 from annexremote import SpecialRemote
 from annexremote import RemoteError
 
-import os.path as op
 from six import (
     text_type,
 )
 from pathlib import (
     Path,
-    PosixPath,
 )
 import shutil
 import tempfile
 from shlex import quote as sh_quote
 import subprocess
-from time import (
-    sleep,
-    time
-)
-
 import logging
 lgr = logging.getLogger('ria_remote')
 

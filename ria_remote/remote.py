@@ -205,16 +205,6 @@ class LocalIO(IOBase):
             f.write(content)
 
 
-class NoSTDINSSHConnection(object):
-    """Small wrapper that does not connect stdin to SSH"""
-    def __init__(self, ssh):
-        self.ssh = ssh
-
-    def __call__(self, *args, **kwargs):
-        with tempfile.TemporaryFile() as tempf:
-            return self.ssh(*args, stdin=tempf, **kwargs)
-
-
 class RemoteCommandFailedError(Exception):
     pass
 
@@ -282,8 +272,24 @@ class SSHRemoteIO(IOBase):
         return cmd + ' && echo "{}" || echo "{}"\n'.format(self.REMOTE_CMD_OK, self.REMOTE_CMD_FAIL)
 
     def _get_download_size_from_key(self, key):
-        # TODO: datalad's AnnexRepo.get_size_from_key() is not correct/not fitting. Move there eventually.
-        # TODO: this method can be more compact. we prob. don't need particularly elaborated error distinction
+        """Get the size of an annex object file from it's key
+
+        Note, that this is not necessarily the size of the annexed file, but possibly only a chunk of it.
+
+        Parameter
+        ---------
+        key: str
+          annex key of the file
+
+        Returns
+        -------
+        int
+          size in bytes
+        """
+        # TODO: datalad's AnnexRepo.get_size_from_key() is not correct/not fitting. Incorporate the wisdom there, too.
+        #       We prob. don't want to actually move this method there, since AnnexRepo would be quite an expensive
+        #       import. Startup time for special remote matters.
+        # TODO: this method can be more compact. we don't need particularly elaborated error distinction
 
         # see: https://git-annex.branchable.com/internals/key_format/
         key_parts = key.split('--')
@@ -378,7 +384,9 @@ class SSHRemoteIO(IOBase):
         with open(dst, 'wb') as target_file:
             bytes_received = 0
             while bytes_received < size:  # TODO: some additional abortion criteria? check stderr in addition?
-                c = self.shell.stdout.read1(1024) #min(size, size - bytes_received))
+                c = self.shell.stdout.read1(1024)
+                # no idea yet, whether or not there's sth to gain by a sophisticated determination of how many bytes to
+                # read at once (like size - bytes_received)
                 if c:
                     bytes_received += len(c)
                     target_file.write(c)
@@ -415,10 +423,6 @@ class SSHRemoteIO(IOBase):
 
     def get_from_archive(self, archive, src, dst):
 
-        # TODO: - We know the size from the key!
-        #       - get => like get from archive (possibly compare performance to scp/sftp)
-        #       - build everything blocking and via shell, except put
-
         # TODO: We probably need to check exitcode on stderr (via marker). If archive or content is missing we will
         #       otherwise hang forever waiting for stdout to fill `size`
 
@@ -428,15 +432,16 @@ class SSHRemoteIO(IOBase):
 
         # TODO: - size needs double-check and some robustness
         #       - can we assume src to be a posixpath?
-        #       - what if we don't have a size? Switch to scp?
+        #       - RF: Apart from the executed command this should be pretty much identical to self.get(), so move that
+        #         code into a common function
 
         from os.path import basename
         size = self._get_download_size_from_key(basename(text_type(src)))
 
         with open(dst, 'wb') as target_file:
             bytes_received = 0
-            while bytes_received < size:  # TODO: some abortion criteria? check stderr in addition?
-                c = self.shell.stdout.read1(1000)
+            while bytes_received < size:
+                c = self.shell.stdout.read1(1024)
                 if c:
                     bytes_received += len(c)
                     target_file.write(c)
@@ -588,12 +593,20 @@ class RIARemote(SpecialRemote):
                         "unknown version of the target layout. You can overrule this by configuring " \
                         "'annex.ria-remote.<name>.force-write'."
 
-        # TODO: It might be faster to directly try to read it, parse the output to detect non-existence of the file
-        #       and act upon it, rather than having two separate remote calls executed for checking existence and then
-        #       read the content
-
         # 1. check dataset tree version
-        if not self.io.exists(dataset_tree_version_file):
+        try:
+            remote_dataset_tree_version = self.io.read_file(dataset_tree_version_file).strip()
+            if remote_dataset_tree_version != self._dataset_tree_version:
+                # Note: In later versions, condition might change in order to deal with older versions
+                self._info("Remote dataset tree reports version {}. Supported version is {}. Consider upgrading "
+                           "git-annex-ria-remote or fix the structure on the remote end."
+                           "".format(remote_dataset_tree_version, self._dataset_tree_version))
+                self._set_read_only(read_only_msg)
+
+        except (RemoteError, FileNotFoundError):  # depends on whether self.io is local or ssh
+            # assume file doesn't exist
+            # TODO: Is there a possibility RemoteError has a different reason and should be handled differently?
+            #       Don't think so ATM
             if not self.io.exists(dataset_tree_version_file.parent):
                 # we are first, just put our stamp on it
                 try:
@@ -610,17 +623,14 @@ class RIARemote(SpecialRemote):
                            "fix the structure on the remote end.")
                 self._set_read_only(read_only_msg)
 
-        else:
-            remote_dataset_tree_version = self.io.read_file(dataset_tree_version_file).strip()
-            if remote_dataset_tree_version != self._dataset_tree_version:
-                # Note: In later versions, condition might change in order to deal with older versions
-                self._info("Remote dataset tree reports version {}. Supported version is {}. Consider upgrading "
-                           "git-annex-ria-remote or fix the structure on the remote end."
-                           "".format(remote_dataset_tree_version, self._dataset_tree_version))
-                self._set_read_only(read_only_msg)
-
         # 2. check (annex) object tree version
-        if not self.io.exists(object_tree_version_file):
+        try:
+            remote_object_tree_version = self.io.read_file(object_tree_version_file).strip()
+            if remote_object_tree_version != self._object_tree_version:
+                self._info("Remote object tree reports version {}. Supported version is {}. Consider upgrading "
+                           "git-annex-ria-remote.".format(remote_object_tree_version, self._object_tree_version))
+                self._set_read_only(read_only_msg)
+        except (RemoteError, FileNotFoundError):
             if not self.io.exists(object_tree_version_file.parent):
                 # we are first, just put our stamp on it
                 try:
@@ -633,12 +643,6 @@ class RIARemote(SpecialRemote):
             else:
                 self._info("Remote doesn't report any object tree version. Consider upgrading git-annex-ria-remote or "
                            "fix the structure on the remote end.")
-                self._set_read_only(read_only_msg)
-        else:
-            remote_object_tree_version = self.io.read_file(object_tree_version_file).strip()
-            if remote_object_tree_version != self._object_tree_version:
-                self._info("Remote object tree reports version {}. Supported version is {}. Consider upgrading "
-                           "git-annex-ria-remote.".format(remote_object_tree_version, self._object_tree_version))
                 self._set_read_only(read_only_msg)
 
     def prepare(self):

@@ -1,14 +1,10 @@
 from annexremote import SpecialRemote
 from annexremote import RemoteError
 
-from six import (
-    text_type,
-)
 from pathlib import (
     Path,
 )
 import shutil
-import tempfile
 from shlex import quote as sh_quote
 import subprocess
 import logging
@@ -161,7 +157,7 @@ class LocalIO(IOBase):
         with open(dst, 'wb') as target_file:
             subprocess.run([
                 '7z', 'x', '-so',
-                text_type(archive), text_type(src)],
+                str(archive), str(src)],
                 stdout=target_file,
             )
 
@@ -181,13 +177,13 @@ class LocalIO(IOBase):
         if not archive_path.exists():
             # no archive, not file
             return False
-        loc = text_type(file_path)
+        loc = str(file_path)
         from datalad.cmd import Runner
         runner = Runner()
         # query 7z for the specific object location, keeps the output
         # lean, even for big archives
         out, err = runner(
-            ['7z', 'l', text_type(archive_path),
+            ['7z', 'l', str(archive_path),
              loc],
             log_stdout=True,
         )
@@ -195,13 +191,13 @@ class LocalIO(IOBase):
 
     def read_file(self, file_path):
 
-        with open(text_type(file_path), 'r') as f:
+        with open(str(file_path), 'r') as f:
             content = f.read()
         return content
 
     def write_file(self, file_path, content):
 
-        with open(text_type(file_path), 'w') as f:
+        with open(str(file_path), 'w') as f:
             f.write(content)
 
 
@@ -364,17 +360,17 @@ class SSHRemoteIO(IOBase):
         #       We could have end marker on stderr instead, but then we need to empty stderr beforehand to not act upon
         #       output from earlier calls. This is a problem with blocking reading, since we need to make sure there's
         #       actually something to read in any case.
-        cmd = 'cat {}'.format(text_type(src))
+        cmd = 'cat {}'.format(str(src))
         self.shell.stdin.write(cmd.encode())
         self.shell.stdin.write(b"\n")
         self.shell.stdin.flush()
 
         from os.path import basename
-        key = basename(text_type(src))
+        key = basename(str(src))
         try:
             size = self._get_download_size_from_key(key)
         except RemoteError as e:
-            raise RemoteError("src: {}".format(text_type(src)) + str(e))
+            raise RemoteError("src: {}".format(str(src)) + str(e))
 
         if size is None:
             # rely on SCP for now
@@ -409,10 +405,10 @@ class SSHRemoteIO(IOBase):
 
     def in_archive(self, archive_path, file_path):
 
-        loc = text_type(file_path)
+        loc = str(file_path)
         # query 7z for the specific object location, keeps the output
         # lean, even for big archives
-        cmd = '7z l {} {}'.format(text_type(archive_path), loc)
+        cmd = '7z l {} {}'.format(str(archive_path), loc)
 
         # Note: Currently relies on file_path not showing up in case of failure
         # including non-existent archive. If need be could be more sophisticated
@@ -426,7 +422,7 @@ class SSHRemoteIO(IOBase):
         # TODO: We probably need to check exitcode on stderr (via marker). If archive or content is missing we will
         #       otherwise hang forever waiting for stdout to fill `size`
 
-        cmd = '7z x -so {} {}\n'.format(text_type(archive), text_type(src))
+        cmd = '7z x -so {} {}\n'.format(str(archive), str(src))
         self.shell.stdin.write(cmd.encode())
         self.shell.stdin.flush()
 
@@ -436,7 +432,7 @@ class SSHRemoteIO(IOBase):
         #         code into a common function
 
         from os.path import basename
-        size = self._get_download_size_from_key(basename(text_type(src)))
+        size = self._get_download_size_from_key(basename(str(src)))
 
         with open(dst, 'wb') as target_file:
             bytes_received = 0
@@ -448,11 +444,11 @@ class SSHRemoteIO(IOBase):
 
     def read_file(self, file_path):
 
-        cmd = "cat  {}".format(text_type(file_path))
+        cmd = "cat  {}".format(str(file_path))
         try:
             out = self._run(cmd, no_output=False, check=True)
         except RemoteCommandFailedError:
-            raise RemoteError("Could not read {}".format(text_type(file_path)))
+            raise RemoteError("Could not read {}".format(str(file_path)))
 
         return out
 
@@ -461,11 +457,11 @@ class SSHRemoteIO(IOBase):
         if not content.endswith('\n'):
             content += '\n'
 
-        cmd = "echo \"{}\" > {}".format(content, text_type(file_path))
+        cmd = "echo \"{}\" > {}".format(content, str(file_path))
         try:
             self._run(cmd, check=True)
         except RemoteCommandFailedError:
-            raise RemoteError("Could not write to {}".format(text_type(file_path)))
+            raise RemoteError("Could not write to {}".format(str(file_path)))
 
 
 class RIARemote(SpecialRemote):

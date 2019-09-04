@@ -1,19 +1,12 @@
 from annexremote import SpecialRemote
 from annexremote import RemoteError
 
-import os.path as op
-from six import (
-    text_type,
-)
-from pathlib import(
+from pathlib import (
     Path,
-    PosixPath,
 )
 import shutil
-import tempfile
 from shlex import quote as sh_quote
 import subprocess
-
 import logging
 lgr = logging.getLogger('ria_remote')
 
@@ -164,7 +157,7 @@ class LocalIO(IOBase):
         with open(dst, 'wb') as target_file:
             subprocess.run([
                 '7z', 'x', '-so',
-                text_type(archive), text_type(src)],
+                str(archive), str(src)],
                 stdout=target_file,
             )
 
@@ -184,13 +177,13 @@ class LocalIO(IOBase):
         if not archive_path.exists():
             # no archive, not file
             return False
-        loc = text_type(file_path)
+        loc = str(file_path)
         from datalad.cmd import Runner
         runner = Runner()
         # query 7z for the specific object location, keeps the output
         # lean, even for big archives
         out, err = runner(
-            ['7z', 'l', text_type(archive_path),
+            ['7z', 'l', str(archive_path),
              loc],
             log_stdout=True,
         )
@@ -198,24 +191,18 @@ class LocalIO(IOBase):
 
     def read_file(self, file_path):
 
-        with open(text_type(file_path), 'r') as f:
+        with open(str(file_path), 'r') as f:
             content = f.read()
         return content
 
     def write_file(self, file_path, content):
 
-        with open(text_type(file_path), 'w') as f:
+        with open(str(file_path), 'w') as f:
             f.write(content)
 
 
-class NoSTDINSSHConnection(object):
-    """Small wrapper that does not connect stdin to SSH"""
-    def __init__(self, ssh):
-        self.ssh = ssh
-
-    def __call__(self, *args, **kwargs):
-        with tempfile.TemporaryFile() as tempf:
-            return self.ssh(*args, stdin=tempf, **kwargs)
+class RemoteCommandFailedError(Exception):
+    pass
 
 
 class SSHRemoteIO(IOBase):
@@ -223,6 +210,11 @@ class SSHRemoteIO(IOBase):
 
     It doesn't even think about a windows server.
     """
+
+    # output markers to detect possible command failure as well as end of output from a particular command:
+    REMOTE_CMD_FAIL = "ria-remote: end - fail"
+    REMOTE_CMD_OK = "ria-remote: end - ok"
+
     def __init__(self, host):
         """
         Parameters
@@ -231,135 +223,245 @@ class SSHRemoteIO(IOBase):
           SSH-accessible host(name) to perform remote IO operations
           on.
         """
-        from datalad.support.sshconnector import SSHManager
-        # connection manager -- we don't have to keep it around, I think
-        self.sshmanager = SSHManager()
-        # the connection to the remote
-        # we don't open it yet, not yet clear if needed
-        self.ssh = self.sshmanager.get_connection(
-            host,
-            use_remote_annex_bundle=False,
-        )
-        self.ssh.open()
-        self.nostdin_ssh = NoSTDINSSHConnection(self.ssh)
+
+        try:
+
+            from datalad.support.sshconnector import SSHManager
+            # connection manager -- we don't have to keep it around, I think
+            self.sshmanager = SSHManager()
+            # the connection to the remote
+            # we don't open it yet, not yet clear if needed
+            self.ssh = self.sshmanager.get_connection(
+                host,
+                use_remote_annex_bundle=False,
+            )
+            self.ssh.open()
+            # open a remote shell
+            cmd = ['ssh'] + self.ssh._ssh_args + [self.ssh.sshri.as_str()]
+            self.shell = subprocess.Popen(cmd, stderr=subprocess.PIPE, stdout=subprocess.PIPE, stdin=subprocess.PIPE)
+            # swallow login message(s):
+            self.shell.stdin.write(b"echo RIA-REMOTE-LOGIN-END\n")
+            self.shell.stdin.flush()
+            while True:
+                line = self.shell.stdout.readline()
+                if line == b"RIA-REMOTE-LOGIN-END\n":
+                    break
+            # TODO: Same for stderr?
+
+        except Exception as e:
+            raise RemoteError(str(e))
+
+    def close(self):
+        # try exiting shell clean first
+        self.shell.stdin.write(b"exit\n")
+        self.shell.stdin.flush()
+        exitcode = self.shell.wait(timeout=0.5)
+        # be more brutal if it doesn't work
+        if exitcode is None:  # timed out
+            # TODO: Theoretically terminate() can raise if not successful. How to deal with that?
+            self.shell.terminate()
+        self.sshmanager.close()
+
+    def _append_end_markers(self, cmd):
+        """Append end markers to remote command"""
+
+        return cmd + ' && echo "{}" || echo "{}"\n'.format(self.REMOTE_CMD_OK, self.REMOTE_CMD_FAIL)
+
+    def _get_download_size_from_key(self, key):
+        """Get the size of an annex object file from it's key
+
+        Note, that this is not necessarily the size of the annexed file, but possibly only a chunk of it.
+
+        Parameter
+        ---------
+        key: str
+          annex key of the file
+
+        Returns
+        -------
+        int
+          size in bytes
+        """
+        # TODO: datalad's AnnexRepo.get_size_from_key() is not correct/not fitting. Incorporate the wisdom there, too.
+        #       We prob. don't want to actually move this method there, since AnnexRepo would be quite an expensive
+        #       import. Startup time for special remote matters.
+        # TODO: this method can be more compact. we don't need particularly elaborated error distinction
+
+        # see: https://git-annex.branchable.com/internals/key_format/
+        key_parts = key.split('--')
+        key_fields = key_parts[0].split('-')
+
+        s = S = C = None
+
+        for field in key_fields[1:]:  # note: first one has to be backend -> ignore
+            if field.startswith('s'):
+                # size of the annexed file content:
+                s = int(field[1:]) if field[1:].isdigit() else None
+            elif field.startswith('S'):
+                # we have a chunk and that's the chunksize:
+                S = int(field[1:]) if field[1:].isdigit() else None
+            elif field.startswith('C'):
+                # we have a chunk, this is it's number:
+                C = int(field[1:]) if field[1:].isdigit() else None
+
+        if s is None:
+            return None
+        elif S is None and C is None:
+            return s
+        elif S and C:
+            if C <= int(s / S):
+                return S
+            else:
+                return s % S
+        else:
+            raise RemoteError("invalid key: {}".format(key))
+
+    def _run(self, cmd, no_output=True, check=False):
+
+        # TODO: we might want to redirect stderr to stdout here (or have additional end marker in stderr)
+        #       otherwise we can't empty stderr to be ready for next command. We also can't read stderr for better error
+        #       messages (RemoteError) without making sure there's something to read in any case (it's blocking!)
+        #       However, if we are sure stderr can only ever happen if we would raise RemoteError anyway, it might be
+        #       okay
+        call = self._append_end_markers(cmd)
+        self.shell.stdin.write(call.encode())
+        self.shell.stdin.flush()
+
+        lines = []
+        while True:
+            line = self.shell.stdout.readline().decode()
+            lines.append(line)
+            if line == self.REMOTE_CMD_OK + '\n':
+                # end reading
+                break
+            elif line == self.REMOTE_CMD_FAIL + '\n':
+                if check:
+                    raise RemoteCommandFailedError("".join(lines[:-1]).replace('\n', '\\n') if len(lines) >= 2
+                                                   else "{} failed.".format(cmd.replace('\n', '\\n')))
+                else:
+                    break
+        if no_output and len(lines) > 1:
+            failed_cmd = cmd.split()[0]
+            # note, that annex would accept only one line in RemoteError's message
+            raise RemoteError("{}: {}".format(failed_cmd, "\\n".join(lines[:-1])))
+        return "".join(lines[:-1])
 
     def mkdir(self, path):
-        self.nostdin_ssh('mkdir -p {}'.format(sh_quote(str(path))))
+        self._run('mkdir -p {}'.format(sh_quote(str(path))))
 
     def put(self, src, dst):
         self.ssh.put(str(src), str(dst))
 
     def get(self, src, dst):
-        self.ssh.get(str(src), str(dst))
+        # TODO: see get_from_archive()
+
+        # TODO: Currently we will hang forever if the file isn't readable and it's supposed size is bigger than whatever
+        #       cat spits out on stdout. This is because we don't notice that cat has exited non-zero.
+        #       We could have end marker on stderr instead, but then we need to empty stderr beforehand to not act upon
+        #       output from earlier calls. This is a problem with blocking reading, since we need to make sure there's
+        #       actually something to read in any case.
+        cmd = 'cat {}'.format(str(src))
+        self.shell.stdin.write(cmd.encode())
+        self.shell.stdin.write(b"\n")
+        self.shell.stdin.flush()
+
+        from os.path import basename
+        key = basename(str(src))
+        try:
+            size = self._get_download_size_from_key(key)
+        except RemoteError as e:
+            raise RemoteError("src: {}".format(str(src)) + str(e))
+
+        if size is None:
+            # rely on SCP for now
+            self.ssh.get(str(src), str(dst))
+            return
+
+        with open(dst, 'wb') as target_file:
+            bytes_received = 0
+            while bytes_received < size:  # TODO: some additional abortion criteria? check stderr in addition?
+                c = self.shell.stdout.read1(1024)
+                # no idea yet, whether or not there's sth to gain by a sophisticated determination of how many bytes to
+                # read at once (like size - bytes_received)
+                if c:
+                    bytes_received += len(c)
+                    target_file.write(c)
 
     def rename(self, src, dst):
-        self.nostdin_ssh('mv {} {}'.format(
-            sh_quote(str(src)),
-            sh_quote(str(dst)))
-        )
+        self._run('mv {} {}'.format(sh_quote(str(src)), sh_quote(str(dst))))
 
     def remove(self, path):
-        self.nostdin_ssh('rm {}'.format(sh_quote(str(path))))
+        self._run('rm {}'.format(sh_quote(str(path))))
 
     def remove_dir(self, path):
-        self.nostdin_ssh('rmdir {}'.format(sh_quote(str(path))))
+        self._run('rmdir {}'.format(sh_quote(str(path))))
 
     def exists(self, path):
         try:
-            out, err = self.nostdin_ssh(
-                'test -e {}'.format(sh_quote(str(path)))
-            )
+            self._run('test -e {}'.format(sh_quote(str(path))), check=True)
             return True
-        except Exception as e:
-            # non-zero exit code gives CommandError
-            # do not bother checking for this precise exception to avoid
-            # import, should not matter why it crashes
+        except RemoteCommandFailedError:
             return False
 
     def in_archive(self, archive_path, file_path):
-        loc = text_type(file_path)
+
+        loc = str(file_path)
         # query 7z for the specific object location, keeps the output
         # lean, even for big archives
-        # bypass most of datalad's code to be able to use subprocess
-        # directly
-        # this requires python 3.5
-        self.ssh.open()
-        cmd = ['ssh'] + self.ssh._ctrl_options \
-            + [self.ssh.sshri.as_str(),
-               '7z', 'l',
-               text_type(archive_path), loc]
-        done = subprocess.run(
-            cmd,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.DEVNULL,
-            stdin=subprocess.DEVNULL,
-            check=False,
-            # the following is `text` from 3.7 onwards
-            universal_newlines=True,
-        )
-        return loc in done.stdout
+        cmd = '7z l {} {}'.format(str(archive_path), loc)
+
+        # Note: Currently relies on file_path not showing up in case of failure
+        # including non-existent archive. If need be could be more sophisticated
+        # and called with check=True + catch RemoteCommandFailedError
+        out = self._run(cmd, no_output=False, check=False)
+
+        return loc in out
 
     def get_from_archive(self, archive, src, dst):
-        # bypass most of datalad's code to be able to use subprocess
-        # directly
-        # this requires python 3.5
-        self.ssh.open()
-        cmd = ['ssh'] + self.ssh._ctrl_options \
-            + [self.ssh.sshri.as_str(),
-               '7z', 'x', '-so',
-               text_type(archive), text_type(src)]
+
+        # TODO: We probably need to check exitcode on stderr (via marker). If archive or content is missing we will
+        #       otherwise hang forever waiting for stdout to fill `size`
+
+        cmd = '7z x -so {} {}\n'.format(str(archive), str(src))
+        self.shell.stdin.write(cmd.encode())
+        self.shell.stdin.flush()
+
+        # TODO: - size needs double-check and some robustness
+        #       - can we assume src to be a posixpath?
+        #       - RF: Apart from the executed command this should be pretty much identical to self.get(), so move that
+        #         code into a common function
+
+        from os.path import basename
+        size = self._get_download_size_from_key(basename(str(src)))
 
         with open(dst, 'wb') as target_file:
-            subprocess.run(
-                cmd,
-                stdout=target_file,
-                stdin=subprocess.DEVNULL,
-                # does not seem to exit non-zero if file not in archive though
-                check=True,
-            )
+            bytes_received = 0
+            while bytes_received < size:
+                c = self.shell.stdout.read1(1024)
+                if c:
+                    bytes_received += len(c)
+                    target_file.write(c)
 
     def read_file(self, file_path):
 
-        self.ssh.open()
-        cmd = ['ssh'] + self.ssh._ctrl_options \
-            + [self.ssh.sshri.as_str(),
-               'cat', text_type(file_path)]
+        cmd = "cat  {}".format(str(file_path))
+        try:
+            out = self._run(cmd, no_output=False, check=True)
+        except RemoteCommandFailedError:
+            raise RemoteError("Could not read {}".format(str(file_path)))
 
-        result = subprocess.run(
-            cmd,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            stdin=subprocess.DEVNULL,
-            check=True,
-            # the following is `text` from 3.7 onwards
-            universal_newlines=True,
-        )
-
-        if result.returncode != 0:
-            raise RemoteError("stdout: {}\nstderr: {}".format(result.stdout, result.stderr))
-
-        return result.stdout
+        return out
 
     def write_file(self, file_path, content):
 
-        self.ssh.open()
+        if not content.endswith('\n'):
+            content += '\n'
 
-        cmd = ['ssh'] + self.ssh._ctrl_options \
-            + [self.ssh.sshri.as_str(),
-               'cat', '-', '>', text_type(file_path)]
-
-        result = subprocess.run(
-            cmd,
-            input=content,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            check=True,
-            # the following is `text` from 3.7 onwards
-            universal_newlines=True,
-        )
-
-        if result.returncode != 0:
-            raise RemoteError("stdout: {}\nstderr: {}".format(result.stdout, result.stderr))
+        cmd = "echo \"{}\" > {}".format(content, str(file_path))
+        try:
+            self._run(cmd, check=True)
+        except RemoteCommandFailedError:
+            raise RemoteError("Could not write to {}".format(str(file_path)))
 
 
 class RIARemote(SpecialRemote):
@@ -487,12 +589,20 @@ class RIARemote(SpecialRemote):
                         "unknown version of the target layout. You can overrule this by configuring " \
                         "'annex.ria-remote.<name>.force-write'."
 
-        # TODO: It might be faster to directly try to read it, parse the output to detect non-existence of the file
-        #       and act upon it, rather than having to separate remote calls executed for checking existence and then
-        #       read the content
-
         # 1. check dataset tree version
-        if not self.io.exists(dataset_tree_version_file):
+        try:
+            remote_dataset_tree_version = self.io.read_file(dataset_tree_version_file).strip()
+            if remote_dataset_tree_version != self._dataset_tree_version:
+                # Note: In later versions, condition might change in order to deal with older versions
+                self._info("Remote dataset tree reports version {}. Supported version is {}. Consider upgrading "
+                           "git-annex-ria-remote or fix the structure on the remote end."
+                           "".format(remote_dataset_tree_version, self._dataset_tree_version))
+                self._set_read_only(read_only_msg)
+
+        except (RemoteError, FileNotFoundError):  # depends on whether self.io is local or ssh
+            # assume file doesn't exist
+            # TODO: Is there a possibility RemoteError has a different reason and should be handled differently?
+            #       Don't think so ATM
             if not self.io.exists(dataset_tree_version_file.parent):
                 # we are first, just put our stamp on it
                 try:
@@ -509,17 +619,14 @@ class RIARemote(SpecialRemote):
                            "fix the structure on the remote end.")
                 self._set_read_only(read_only_msg)
 
-        else:
-            remote_dataset_tree_version = self.io.read_file(dataset_tree_version_file)
-            if remote_dataset_tree_version != self._dataset_tree_version:
-                # Note: In later versions, condition might change in order to deal with older versions
-                self._info("Remote dataset tree reports version {}. Supported version is {}. Consider upgrading "
-                           "git-annex-ria-remote or fix the structure on the remote end."
-                           "".format(remote_dataset_tree_version, self._dataset_tree_version))
-                self._set_read_only(read_only_msg)
-
         # 2. check (annex) object tree version
-        if not self.io.exists(object_tree_version_file):
+        try:
+            remote_object_tree_version = self.io.read_file(object_tree_version_file).strip()
+            if remote_object_tree_version != self._object_tree_version:
+                self._info("Remote object tree reports version {}. Supported version is {}. Consider upgrading "
+                           "git-annex-ria-remote.".format(remote_object_tree_version, self._object_tree_version))
+                self._set_read_only(read_only_msg)
+        except (RemoteError, FileNotFoundError):
             if not self.io.exists(object_tree_version_file.parent):
                 # we are first, just put our stamp on it
                 try:
@@ -530,14 +637,8 @@ class RIARemote(SpecialRemote):
                     # Note, that we need to fail in any case but in a way appropriate for a special remote. Otherwise
                     # we get something like a "broken pipe" error, which tells nothing about the issue.
             else:
-                self._info("Remote doesn't report any dataset tree version. Consider upgrading git-annex-ria-remote or "
+                self._info("Remote doesn't report any object tree version. Consider upgrading git-annex-ria-remote or "
                            "fix the structure on the remote end.")
-                self._set_read_only(read_only_msg)
-        else:
-            remote_object_tree_version = self.io.read_file(object_tree_version_file)
-            if remote_object_tree_version != self._object_tree_version:
-                self._info("Remote object tree reports version {}. Supported version is {}. Consider upgrading "
-                           "git-annex-ria-remote.".format(remote_object_tree_version, self._object_tree_version))
                 self._set_read_only(read_only_msg)
 
     def prepare(self):
@@ -552,6 +653,8 @@ class RIARemote(SpecialRemote):
             self.io = LocalIO()
         elif self.storage_host:
             self.io = SSHRemoteIO(self.storage_host)
+            from atexit import register
+            register(self.io.close)
         else:
             raise RemoteError(
                 "Local object tree base path does not exist, and no SSH host "

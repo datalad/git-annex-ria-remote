@@ -1,0 +1,49 @@
+#!/usr/bin/make -f
+#export DH_VERBOSE = 1
+
+srcpkg = $(shell LC_ALL=C dpkg-parsechangelog | grep '^Source:' | cut -d ' ' -f 2,2)
+# this figures out the last merge point from 'master' into the Debian branch and
+# then described this commit relative to the last release tag (V...)
+# If this should make any sense the local master branch must track upstream's
+# master or whatever other source branch.
+gitver = $(shell [ -x /usr/bin/git ] && git describe --tags --match '[0-9].*' $$(git merge-base -a HEAD master) | sed -e 's/-/+git/')
+
+export DH_VERBOSE = 1
+export PYBUILD_NAME = ria-remote
+export PYBUILD_TEST_ARGS = -s -v
+export http_proxy=
+export https_proxy=
+
+%:
+	dh $@ --with python3 --buildsystem=pybuild
+
+clean::
+	dh_clean
+	-rm -rf bin build .pybuild datalad.egg-info
+
+override_dh_auto_configure:
+	mkdir -p build; \
+	    export HOME=$(CURDIR)/build;  \
+        git config --global user.name "TESTING"; \
+        git config --global user.email "TESTING@example.com"
+
+override_dh_auto_test:
+#	# Since pybuild overrides HOME for its own purposes, we will rely on our
+#	# setup_package placing it back into HOME
+	PATH=$(CURDIR)/bin:$$PATH \
+	    dh_auto_test -- --test-nose
+
+
+override_dh_auto_install:
+	dh_auto_install
+	#mv debian/python3-datalad/usr/bin/* debian/datalad/usr/bin
+	#rm -f debian/python*-datalad/usr/bin/*
+
+override_dh_installchangelogs:
+	dh_installchangelogs CHANGELOG
+
+# make orig tarball from repository content
+get-orig-source:
+	# orig tarball, turn directory into something nicer
+	git archive --format=tar --prefix=$(srcpkg)-$(gitver)/ HEAD | \
+		gzip -9 > $(srcpkg)_$(gitver).orig.tar.gz

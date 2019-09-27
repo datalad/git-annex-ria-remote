@@ -1,0 +1,54 @@
+Source: ria-remote
+Maintainer: NeuroDebian Team <team@neuro.debian.net>
+Uploaders: Yaroslav Halchenko <debian@onerussian.com>,
+           Michael Hanke <mih@debian.org>
+Section: utils
+Priority: optional
+Build-Depends: debhelper (>= 12~),
+               dh-python,
+               python3-all,
+               python3-datalad (>= 0.12.0rc5~),
+               python3-annexremote
+Standards-Version: 4.3.0
+Vcs-Browser: https://github.com/datalad/git-annex-ria-remote
+Vcs-Git: https://github.com/datalad/git-annex-ria-remote -b debian
+Homepage: https://github.com/datalad/git-annex-ria-remote
+
+Package: git-annex-ria-remote
+Architecture: all
+Section: utils
+Depends: python3-datalad (>= 0.12.0rc5~),
+         python3-annexremote,
+         ${misc:Depends},
+         ${python3:Depends}
+Provides: ${python3:Provides}
+Description: git annex special remote for remote indexed archives
+ While being very similar to the directory special remote type built into
+ git-annex this implementation offers a few key differences:
+ .
+  - (Optional) read-access to (compressed) 7z archives
+   (Parts of) the keys stored in the remote can live in a 7z archive. These
+   archives are indexed and support relatively fast random read access. This
+   feature can be instrumental on HPC storage systems where strong quotas on
+   filesystem inodes might be imposed on users. The entire key store of the
+   remote can be put into an archive, re-using the exact same directory
+   structure, and remains fully accessible while only using a handful of
+   inodes, regardless of file number and size.
+ .
+  - (SSH-based remote) access to a configurable directory
+   An SSH host name can be provided and all interaction with the remote will
+   be performed via SSH. Moving from local to remote operations, or switching
+   target paths can be done via a change to the configuration (even without
+   having to touch a repository at all). This makes it easier to accommodate
+   infrastructural changes, especially when dealing with large numbers of
+   repositories.
+ .
+  - Multi-repository directory structure
+   While each repository has its own associated key store directory tree, the
+   key store directories of multiple repositories can be organized into a
+   homogeneous archive directory structure. For DataLad datasets, their ID is
+   used to define the location of a key store in an archive. For any other
+   repository the annex remote UUID is taken. This feature further aids the
+   handling of large numbers of repositories in a backup or data store use
+   case, because locations are derived from repository properties rather than
+   having to re-configure them explicitly.

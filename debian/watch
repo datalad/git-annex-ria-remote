@@ -1,0 +1,4 @@
+version=3
+
+opts="filenamemangle=s/(?:.*\/)?(\d[\d\.]+)\.tar\.gz/ria-remote-$1.tar.gz/" \
+https://github.com/datalad/git-annex-ria-remote/releases (?:.*/)?(\d[\d\.]+)\.tar\.gz

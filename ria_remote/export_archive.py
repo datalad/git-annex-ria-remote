@@ -6,7 +6,7 @@
 #   copyright and license terms.
 #
 # ## ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ##
-"""Report status of a dataset (hierarchy)'s work tree"""
+"""Export an archive of a local annex object store, suitable for RIA"""
 
 __docformat__ = 'restructuredtext'
 
@@ -61,15 +61,16 @@ class ExportArchive(Interface):
             no dataset is given, an attempt is made to identify the dataset
             based on the current working directory""",
             constraints=EnsureDataset() | EnsureNone()),
-        outputdir=Parameter(
-            args=("outputdir",),
-            metavar="DIRECTORY",
-            doc="""directory to place the archive into""",
+        target=Parameter(
+            args=("target",),
+            metavar="TARGET",
+            doc="""if an existing directory, an 'archive.7z' is placed into
+            it, otherwise this is the path to the target archive""",
             constraints=EnsureStr() | EnsureNone()),
         opts=Parameter(
             args=("opts",),
             nargs=REMAINDER,
-            metavar="OPTIONS",
+            metavar="...",
             doc="""additional options for 7z"""),
     )
 
@@ -77,7 +78,7 @@ class ExportArchive(Interface):
     @datasetmethod(name='ria_export_archive')
     @eval_results
     def __call__(
-            outputdir,
+            target,
             dataset=None,
             opts=None):
         # only non-bare repos have hashdirmixed, so require one
@@ -86,11 +87,14 @@ class ExportArchive(Interface):
         ds_repo = ds.repo
         annex_objs = ds_repo.dot_git / 'annex' / 'objects'
 
-        archive = resolve_path(outputdir, dataset)
+        archive = resolve_path(target, dataset)
         if archive.is_dir():
             archive = archive / 'archive.7z'
+        else:
+            archive.parent.mkdir(exist_ok=True, parents=True)
 
         if not opts:
+            # uncompressed by default
             opts = ['-mx0']
 
         res_kwargs = dict(

@@ -165,7 +165,7 @@ def test_version_check(path, objtree):
     # Accessing the remote should not yield any output regarding versioning, since it's the "correct" version
     # Note that "fsck" is an arbitrary choice. We need just something to talk to the special remote
     with swallow_logs(new_level=logging.INFO) as cml:
-        fsck(ds.repo, remote='archive', fast=True)
+        ds.repo.fsck(remote='archive', fast=True)
         assert not cml.out  # TODO: For some reason didn't get cml.assert_logged to assert "nothing was logged"
 
     # Now fake-change the version

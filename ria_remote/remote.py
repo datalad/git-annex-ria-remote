@@ -677,12 +677,27 @@ class RIARemote(SpecialRemote):
         dsobj_dir, archive_path, key_path = self._get_obj_location(key)
         key_path = dsobj_dir / key_path
         self.io.mkdir(key_path.parent)
+
         # we need to copy to a temp location to let
         # checkpresent fail while the transfer is still in progress
-        tmp_path = key_path.with_suffix(key_path.suffix + '._')
-        self.io.put(filename, tmp_path)
-        # copy done, atomic rename to actual target
-        self.io.rename(tmp_path, key_path)
+        # and furthermore not interfere with administrative tasks in annex/objects
+        git_dir, _, _ = self.get_layout_locations(self.objtree_base_path, self.archive_id, key)
+        transfer_dir = git_dir / "ria-remote" / "transfer"
+        self.io.mkdir(transfer_dir)
+        tmp_path = transfer_dir / key
+
+        if tmp_path.exists():
+            # Just in case - some parallel job could already be writing to it
+            # at least tell the conclusion, not just some obscure permission error
+            raise RemoteError('{}: upload already in progress'.format(filename))
+        try:
+            self.io.put(filename, tmp_path)
+            # copy done, atomic rename to actual target
+            self.io.rename(tmp_path, key_path)
+        except Exception as e:
+            # whatever went wrong, we don't want to leave the transfer location blocked
+            self.io.remove(tmp_path)
+            raise RemoteError(str(e))
 
     def transfer_retrieve(self, key, filename):
         dsobj_dir, archive_path, key_path = self._get_obj_location(key)

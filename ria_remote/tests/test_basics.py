@@ -72,11 +72,7 @@ def test_archive_layout(path, objtree, dirremote, archivremote):
     # special remote
     whereis = ds.repo.whereis('one.txt')
     targetpath = Path(archivremote) / ds.id[:3] / ds.id[3:] / 'archives'
-    targetpath.mkdir(parents=True)
-    subprocess.run(
-        ['7z', 'u', str(targetpath / 'archive.7z'), '.'],
-        cwd=dirremote,
-    )
+    ds.ria_export_archive(targetpath / 'archive.7z')
     initexternalremote(ds.repo, '7z', 'ria', config={'base-path': archivremote})
     # now fsck the new remote to get the new special remote indexed
     fsck(ds.repo, remote='7z', fast=True)

@@ -1,6 +1,5 @@
 from pathlib import Path
 import os.path as op
-import shutil
 import subprocess
 from datalad.interface.results import annexjson2result
 from datalad.api import (
@@ -13,16 +12,11 @@ from datalad.tests.utils import (
     assert_result_count,
     eq_,
     SkipTest,
-    assert_raises,
     serve_path_via_http
 )
 from ria_remote.tests.utils import (
-    initremote,
     initexternalremote,
-    setup_archive_remote,
     populate_dataset,
-    get_all_files,
-    fsck,
 )
 
 
@@ -60,7 +54,7 @@ def test_bare_git(origin, remote_base_path):
     # fsck
     ds.drop('.')
     ds.get('.')
-    assert_status('ok', [annexjson2result(r, ds) for r in fsck(ds.repo)])
+    assert_status('ok', [annexjson2result(r, ds) for r in ds.repo.fsck()])
 
     # Since we created the remote this particular way instead of letting ria-remote create it, we need to put
     # ria-layout-version files into it. Then we should be able to also add it as a ria-remote.
@@ -75,7 +69,7 @@ def test_bare_git(origin, remote_base_path):
     assert_status(
         'ok',
         [annexjson2result(r, ds)
-         for r in fsck(ds.repo, remote='riaremote', fast=True)])
+         for r in ds.repo.fsck(remote='riaremote', fast=True)])
     eq_(len(ds.repo.whereis('one.txt')), 3)
 
     # Now move content from git-remote to local and see it not being available via bare-git anymore
@@ -85,7 +79,7 @@ def test_bare_git(origin, remote_base_path):
     eq_(len(ds.repo.whereis('one.txt')), 2)
 
     # But after fsck it does:
-    assert_result_count([annexjson2result(r, ds) for r in fsck(ds.repo, remote='riaremote', fast=True)],
+    assert_result_count([annexjson2result(r, ds) for r in ds.repo.fsck(remote='riaremote', fast=True)],
                         2,
                         status='error',
                         message='fixing location log')
@@ -129,7 +123,7 @@ def test_create_as_bare(origin, remote_base_path, remote_base_url, public, consu
     assert_status(
         'ok',
         [annexjson2result(r, ds)
-         for r in fsck(ds.repo, remote='riaremote', fast=True)])
+         for r in ds.repo.fsck(remote='riaremote', fast=True)])
 
     remote_dataset_path = remote_base_path / ds.id[:3] / ds.id[3:]
 
@@ -161,7 +155,7 @@ def test_create_as_bare(origin, remote_base_path, remote_base_url, public, consu
     assert_status(
         'ok',
         [annexjson2result(r, ds)
-         for r in fsck(ds.repo, remote='bare-git', fast=True)])
+         for r in ds.repo.fsck(remote='bare-git', fast=True)])
     eq_(len(ds.repo.whereis('one.txt')), 3)
 
     # we can drop and get again via 'bare-git' remote:

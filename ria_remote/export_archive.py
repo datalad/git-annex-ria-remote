@@ -51,9 +51,19 @@ lgr = logging.getLogger('ria_remote.export_archive')
 @build_doc
 class ExportArchive(Interface):
     """Export an archive of a local annex object store for the RIA remote.
+
+    Keys in the local annex object store are reorganized in a temporary
+    directory (using links to avoid storage duplication) to use the
+    'hashdirlower' setup used by git-annex for bare repositories and
+    the directory-type special remote. This alternative object store is
+    then moved into a 7zip archive that is suitable for use in a
+    RIA remote dataset store. Placing such an archive into::
+
+      <dataset location>/archives/archive.7z
+
+    Enables the RIA special remote to locate and retrieve all key contained
+    in the archive.
     """
-    # make the custom renderer the default one, as the global default renderer
-    # does not yield meaningful output for this command
     _params_ = dict(
         dataset=Parameter(
             args=("-d", "--dataset"),
@@ -71,7 +81,8 @@ class ExportArchive(Interface):
             args=("opts",),
             nargs=REMAINDER,
             metavar="...",
-            doc="""additional options for 7z"""),
+            doc="""list of options for 7z to replace the default '-mx0' to
+            generate an uncompressed archive"""),
     )
 
     @staticmethod

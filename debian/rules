@@ -19,7 +19,8 @@ export https_proxy=
 
 clean::
 	dh_clean
-	-rm -rf bin build .pybuild datalad.egg-info
+	-rm -rf __pycache__ build .pybuild ria_remote.egg-info dist
+	-find . -name __pycache__ -type d -exec rm -rf {} \;
 
 override_dh_auto_configure:
 	mkdir -p build; \

@@ -165,7 +165,7 @@ class ExportArchive(Interface):
                 increment=True)
             keydir = exportdir / hashdir / key
             keydir.mkdir(parents=True, exist_ok=True)
-            os.link(keypath, str(keydir / key))
+            os.link(str(keypath), str(keydir / key))
 
         log_progress(
             lgr.info,

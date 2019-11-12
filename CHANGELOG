@@ -1,3 +1,8 @@
+?.? (??? ??, ????) -- ?
+
+- New DataLab subcommand 'ria-export-archive' for exporting a local annex
+  object store into a 7z archive for use with the RIA special remote.
+
 0.5 (Sep 27, 2019) -- Speed!
 
 - Communication with an SSH host is now done via a persistent remote shell

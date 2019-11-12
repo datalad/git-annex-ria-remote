@@ -96,6 +96,11 @@ class ExportArchive(Interface):
         ds = require_dataset(
             dataset, check_installed=True, purpose='RIA archive export')
         ds_repo = ds.repo
+
+        # TODO remove once datalad 0.12rc7 or later is released
+        from datalad.support.gitrepo import GitRepo
+        ds_repo.dot_git = ds_repo.pathobj / GitRepo.get_git_dir(ds_repo)
+
         annex_objs = ds_repo.dot_git / 'annex' / 'objects'
 
         archive = resolve_path(target, dataset)

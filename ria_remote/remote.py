@@ -238,7 +238,7 @@ class SSHRemoteIO(IOBase):
             self.ssh.open()
             # open a remote shell
             cmd = ['ssh'] + self.ssh._ssh_args + [self.ssh.sshri.as_str()]
-            self.shell = subprocess.Popen(cmd, stderr=subprocess.PIPE, stdout=subprocess.PIPE, stdin=subprocess.PIPE)
+            self.shell = subprocess.Popen(cmd, stderr=subprocess.DEVNULL, stdout=subprocess.PIPE, stdin=subprocess.PIPE)
             # swallow login message(s):
             self.shell.stdin.write(b"echo RIA-REMOTE-LOGIN-END\n")
             self.shell.stdin.flush()
@@ -473,7 +473,6 @@ class RIARemote(SpecialRemote):
 
     def __init__(self, annex):
         super(RIARemote, self).__init__(annex)
-        self.objtree_path = None
         # machine to SSH-log-in to access/store the data
         # subclass must set this
         self.storage_host = None
@@ -484,6 +483,12 @@ class RIARemote(SpecialRemote):
         self.read_only = False
         self.can_notify = None  # to be figured out later, since annex.protocol.extensions is not yet accessible
         self.force_write = None
+        self.uuid = None
+
+        # for caching the remote's layout locations:
+        self.remote_git_dir = None
+        self.remote_archive_dir = None
+        self.remote_obj_dir = None
 
     def _load_cfg(self, gitdir, name):
         self.storage_host = _get_gitcfg(
@@ -647,6 +652,7 @@ class RIARemote(SpecialRemote):
         self.can_notify = "INFO" in self.annex.protocol.extensions
 
         gitdir = self.annex.getgitdir()
+        self.uuid = self.annex.getuuid()
         self._verify_config(gitdir)
 
         if self._local_io():
@@ -669,6 +675,10 @@ class RIARemote(SpecialRemote):
 
         self._check_layout_version()
 
+        # cache remote layout directories
+        self.remote_git_dir, self.remote_archive_dir, self.remote_obj_dir = \
+            self.get_layout_locations(self.objtree_base_path, self.archive_id)
+
     def transfer_store(self, key, filename):
         if self.read_only:
             raise RemoteError("Remote was set to read-only. "
@@ -677,12 +687,27 @@ class RIARemote(SpecialRemote):
         dsobj_dir, archive_path, key_path = self._get_obj_location(key)
         key_path = dsobj_dir / key_path
         self.io.mkdir(key_path.parent)
+
         # we need to copy to a temp location to let
         # checkpresent fail while the transfer is still in progress
-        tmp_path = key_path.with_suffix(key_path.suffix + '._')
-        self.io.put(filename, tmp_path)
-        # copy done, atomic rename to actual target
-        self.io.rename(tmp_path, key_path)
+        # and furthermore not interfere with administrative tasks in annex/objects
+        # In addition include uuid, to not interfere with parallel uploads from different remotes
+        transfer_dir = self.remote_git_dir / "ria-remote-{}".format(self.uuid) / "transfer"
+        self.io.mkdir(transfer_dir)
+        tmp_path = transfer_dir / key
+
+        if tmp_path.exists():
+            # Just in case - some parallel job could already be writing to it
+            # at least tell the conclusion, not just some obscure permission error
+            raise RemoteError('{}: upload already in progress'.format(filename))
+        try:
+            self.io.put(filename, tmp_path)
+            # copy done, atomic rename to actual target
+            self.io.rename(tmp_path, key_path)
+        except Exception as e:
+            # whatever went wrong, we don't want to leave the transfer location blocked
+            self.io.remove(tmp_path)
+            raise RemoteError(str(e))
 
     def transfer_retrieve(self, key, filename):
         dsobj_dir, archive_path, key_path = self._get_obj_location(key)
@@ -747,22 +772,22 @@ class RIARemote(SpecialRemote):
         )
 
     @staticmethod
-    def get_layout_locations(base_path, dsid, key):
-        # Notes:
-        #   - changes to this method may require an update of RIARemote._layout_version
-        #   - `key` parameter included, since locations ('archive' for example) might depend on it in the future
+    def get_layout_locations(base_path, dsid):
+        # Note: Changes to this method may require an update of RIARemote._layout_version
 
         dsgit_dir = base_path / dsid[:3] / dsid[3:]
-        archive_path = dsgit_dir / 'archives' / 'archive.7z'
+        archive_dir = dsgit_dir / 'archives'
         dsobj_dir = dsgit_dir / 'annex' / 'objects'
-        return dsgit_dir, archive_path, dsobj_dir
+        return dsgit_dir, archive_dir, dsobj_dir
 
     def _get_obj_location(self, key):
         # Note: Changes to this method may require an update of RIARemote._layout_version
+        # Note2: archive_path is always the same ATM. However, it might depend on `key` in the future.
+        #        Therefore build the actual filename for the archive herein as opposed to `get_layout_locations`.
 
-        dsgit_dir, archive_path, dsobj_dir = self.get_layout_locations(self.objtree_base_path, self.archive_id, key)
         key_dir = self.annex.dirhash_lower(key)
         # double 'key' is not a mistake, but needed to achieve the exact same
         # layout as the 'directory'-type special remote
         key_path = Path(key_dir) / key / key
-        return dsobj_dir, archive_path, key_path
+        archive_path = self.remote_archive_dir / 'archive.7z'
+        return self.remote_obj_dir, archive_path, key_path

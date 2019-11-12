@@ -484,6 +484,7 @@ class RIARemote(SpecialRemote):
         self.read_only = False
         self.can_notify = None  # to be figured out later, since annex.protocol.extensions is not yet accessible
         self.force_write = None
+        self.uuid = None
 
     def _load_cfg(self, gitdir, name):
         self.storage_host = _get_gitcfg(
@@ -647,6 +648,7 @@ class RIARemote(SpecialRemote):
         self.can_notify = "INFO" in self.annex.protocol.extensions
 
         gitdir = self.annex.getgitdir()
+        self.uuid = self.annex.getuuid()
         self._verify_config(gitdir)
 
         if self._local_io():
@@ -681,8 +683,9 @@ class RIARemote(SpecialRemote):
         # we need to copy to a temp location to let
         # checkpresent fail while the transfer is still in progress
         # and furthermore not interfere with administrative tasks in annex/objects
+        # In addition include uuid, to not interfere with parallel uploads from different remotes
         git_dir, _, _ = self.get_layout_locations(self.objtree_base_path, self.archive_id, key)
-        transfer_dir = git_dir / "ria-remote" / "transfer"
+        transfer_dir = git_dir / "ria-remote-{}".format(self.uuid) / "transfer"
         self.io.mkdir(transfer_dir)
         tmp_path = transfer_dir / key
 

@@ -1,3 +1,11 @@
+0.5 (Sep 27, 2019) -- Speed!
+
+- Communication with an SSH host is now done via a persistent remote shell
+  session. This massively reduces the command latency on systems that are
+  slow in providing a new session.
+- Further minimization of the number of commands that are executed on
+  remote systems.
+
 0.4 (Aug 20, 2019) -- Tests!
 
 - Package now called 'ria-remote' on PyPi

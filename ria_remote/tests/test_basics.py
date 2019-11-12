@@ -15,7 +15,6 @@ from datalad.tests.utils import (
     assert_repo_status,
     assert_status,
     eq_,
-    SkipTest,
     assert_raises
 )
 
@@ -29,7 +28,6 @@ from ria_remote.tests.utils import (
     setup_archive_remote,
     populate_dataset,
     get_all_files,
-    fsck,
 )
 
 
@@ -72,14 +70,10 @@ def test_archive_layout(path, objtree, dirremote, archivremote):
     # special remote
     whereis = ds.repo.whereis('one.txt')
     targetpath = Path(archivremote) / ds.id[:3] / ds.id[3:] / 'archives'
-    targetpath.mkdir(parents=True)
-    subprocess.run(
-        ['7z', 'u', str(targetpath / 'archive.7z'), '.'],
-        cwd=dirremote,
-    )
+    ds.ria_export_archive(targetpath / 'archive.7z')
     initexternalremote(ds.repo, '7z', 'ria', config={'base-path': archivremote})
     # now fsck the new remote to get the new special remote indexed
-    fsck(ds.repo, remote='7z', fast=True)
+    ds.repo.fsck(remote='7z', fast=True)
     eq_(len(ds.repo.whereis('one.txt')), len(whereis) + 1)
 
 
@@ -115,7 +109,7 @@ def test_backup_archive(path, objtree, archivremote):
     assert_status(
         'error',
         [annexjson2result(r, ds)
-         for r in fsck(ds.repo, remote='archive', fast=True)])
+         for r in ds.repo.fsck(remote='archive', fast=True)])
     # now only available "here"
     eq_(len(ds.repo.whereis('one.txt')), 1)
 
@@ -126,14 +120,14 @@ def test_backup_archive(path, objtree, archivremote):
     assert_status(
         'ok',
         [annexjson2result(r, ds)
-         for r in fsck(ds.repo, remote='backup', fast=True)])
+         for r in ds.repo.fsck(remote='backup', fast=True)])
     eq_(len(ds.repo.whereis('one.txt')), 2)
 
     # now we can drop all content locally, reobtain it, and survive an
     # fsck
     ds.drop('.')
     ds.get('.')
-    assert_status('ok', [annexjson2result(r, ds) for r in fsck(ds.repo)])
+    assert_status('ok', [annexjson2result(r, ds) for r in ds.repo.fsck()])
 
 
 @with_tempfile(mkdir=True)
@@ -167,7 +161,7 @@ def test_version_check(path, objtree):
     # Accessing the remote should not yield any output regarding versioning, since it's the "correct" version
     # Note that "fsck" is an arbitrary choice. We need just something to talk to the special remote
     with swallow_logs(new_level=logging.INFO) as cml:
-        fsck(ds.repo, remote='archive', fast=True)
+        ds.repo.fsck(remote='archive', fast=True)
         assert not cml.out  # TODO: For some reason didn't get cml.assert_logged to assert "nothing was logged"
 
     # Now fake-change the version
@@ -176,7 +170,7 @@ def test_version_check(path, objtree):
 
     # Now we should see a message about it
     with swallow_logs(new_level=logging.INFO) as cml:
-        fsck(ds.repo, remote='archive', fast=True)
+        ds.repo.fsck(remote='archive', fast=True)
         cml.assert_logged(level="INFO", msg="Remote object tree reports version 2", regex=False)
         cml.assert_logged(level="INFO", msg="Setting remote to read-only usage", regex=False)
 

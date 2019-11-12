@@ -1,5 +1,5 @@
-ria-remote (0.5-1) UNRELEASED; urgency=low
+ria-remote (0.6-1) UNRELEASED; urgency=low
 
   * Initial release.
 
- -- Michael Hanke <mih@debian.org>  Fri, 27 Sep 2019 16:11:59 +0200
+ -- Michael Hanke <mih@debian.org>  Tue, 12 Nov 2019 21:57:00 +0100

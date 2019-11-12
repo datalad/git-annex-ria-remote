@@ -8,11 +8,11 @@ import shutil
 from shlex import quote as sh_quote
 import subprocess
 import logging
+from functools import wraps
 lgr = logging.getLogger('ria_remote')
 
 # TODO
 # - make archive check optional
-# - move fsck to core
 
 
 def _get_gitcfg(gitdir, key, cfgargs=None):
@@ -119,7 +119,7 @@ class IOBase(object):
 
         raise NotImplementedError
 
-    def write_file(self, file_path, content):
+    def write_file(self, file_path, content, mode='w'):
         """Write a remote file
 
         Parameters
@@ -195,9 +195,9 @@ class LocalIO(IOBase):
             content = f.read()
         return content
 
-    def write_file(self, file_path, content):
+    def write_file(self, file_path, content, mode='w'):
 
-        with open(str(file_path), 'w') as f:
+        with open(str(file_path), mode) as f:
             f.write(content)
 
 
@@ -452,16 +452,55 @@ class SSHRemoteIO(IOBase):
 
         return out
 
-    def write_file(self, file_path, content):
+    def write_file(self, file_path, content, mode='w'):
 
+        if mode == 'w':
+            mode = ">"
+        elif mode == 'a':
+            mode = ">>"
+        else:
+            raise ValueError("Unknown mode '{}'".format(mode))
         if not content.endswith('\n'):
             content += '\n'
 
-        cmd = "echo \"{}\" > {}".format(content, str(file_path))
+        cmd = "echo \"{}\" {} {}".format(content, mode, str(file_path))
         try:
             self._run(cmd, check=True)
         except RemoteCommandFailedError:
             raise RemoteError("Could not write to {}".format(str(file_path)))
+
+
+class RIARemoteError(RemoteError):
+
+    def __init__(self, msg):
+        super().__init__(msg.replace('\n', '\\n'))
+
+
+def handle_errors(func):
+    """Decorator to convert and log errors
+
+    Intended to use with every method of RiaRemote class, facing the outside world.
+    In particular, that is about everything, that may be called via annex' special remote protocol,
+    since a non-RemoteError will simply result in a broken pipe by default handling.
+    """
+
+    # TODO: configurable on remote end (flag within layout_version!)
+
+    @wraps(func)
+    def new_func(self, *args, **kwargs):
+        try:
+            return func(self, *args, **kwargs)
+        except Exception as e:
+            from datetime import datetime
+
+            log_target = self.objtree_base_path / 'error_logs' / "{dsid}.{uuid}.log".format(dsid=self.archive_id,
+                                                                                            uuid=self.uuid)
+            entry = "{time}: {error}".format(time=datetime.now(),
+                                             error=str(e))
+            self.io.write_file(log_target, entry, mode='a')
+            raise RIARemoteError(str(e))
+
+    return new_func
 
 
 class RIARemote(SpecialRemote):
@@ -471,6 +510,7 @@ class RIARemote(SpecialRemote):
     _dataset_tree_version = '1'
     _object_tree_version = '1'
 
+    @handle_errors
     def __init__(self, annex):
         super(RIARemote, self).__init__(annex)
         # machine to SSH-log-in to access/store the data
@@ -536,6 +576,7 @@ class RIARemote(SpecialRemote):
         if not self.force_write:
             self.force_write = self.annex.getconfig('force-write')
 
+    @handle_errors
     def initremote(self):
         # which repo are we talking about
         gitdir = self.annex.getgitdir()
@@ -646,6 +687,7 @@ class RIARemote(SpecialRemote):
                            "fix the structure on the remote end.")
                 self._set_read_only(read_only_msg)
 
+    @handle_errors
     def prepare(self):
 
         # can we use self.annex.info() for sending user output to annex?
@@ -679,6 +721,7 @@ class RIARemote(SpecialRemote):
         self.remote_git_dir, self.remote_archive_dir, self.remote_obj_dir = \
             self.get_layout_locations(self.objtree_base_path, self.archive_id)
 
+    @handle_errors
     def transfer_store(self, key, filename):
         if self.read_only:
             raise RemoteError("Remote was set to read-only. "
@@ -709,6 +752,7 @@ class RIARemote(SpecialRemote):
             self.io.remove(tmp_path)
             raise RemoteError(str(e))
 
+    @handle_errors
     def transfer_retrieve(self, key, filename):
         dsobj_dir, archive_path, key_path = self._get_obj_location(key)
         abs_key_path = dsobj_dir / key_path
@@ -724,6 +768,7 @@ class RIARemote(SpecialRemote):
             except Exception as e2:
                 raise RemoteError('Failed to key: {}'.format([e1, e2]))
 
+    @handle_errors
     def checkpresent(self, key):
         dsobj_dir, archive_path, key_path = self._get_obj_location(key)
         abs_key_path = dsobj_dir / key_path
@@ -737,6 +782,7 @@ class RIARemote(SpecialRemote):
         # TODO honor future 'archive-mode' flag
         return self.io.in_archive(archive_path, key_path)
 
+    @handle_errors
     def remove(self, key):
         if self.read_only:
             raise RemoteError("Remote was set to read-only. "
@@ -755,6 +801,7 @@ class RIARemote(SpecialRemote):
             except Exception:
                 break
 
+    @handle_errors
     def getcost(self):
         # 100 is cheap, 200 is expensive (all relative to Config/Cost.hs)
         # 100/200 are the defaults for local and remote operations in
@@ -763,6 +810,7 @@ class RIARemote(SpecialRemote):
         # otherwise expensive (200)
         return '100' if self._local_io() else '200'
 
+    @handle_errors
     def whereis(self, key):
         dsobj_dir, archive_path, key_path = self._get_obj_location(key)
         return str(key_path) if self._local_io() \

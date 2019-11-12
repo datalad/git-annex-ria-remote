@@ -98,8 +98,9 @@ class ExportArchive(Interface):
         ds_repo = ds.repo
 
         # TODO remove once datalad 0.12rc7 or later is released
-        from datalad.support.gitrepo import GitRepo
-        ds_repo.dot_git = ds_repo.pathobj / GitRepo.get_git_dir(ds_repo)
+        if not hasattr(ds_repo, 'dot_git'):
+            from datalad.support.gitrepo import GitRepo
+            ds_repo.dot_git = ds_repo.pathobj / GitRepo.get_git_dir(ds_repo)
 
         annex_objs = ds_repo.dot_git / 'annex' / 'objects'
 

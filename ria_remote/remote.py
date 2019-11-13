@@ -525,6 +525,8 @@ class RIARemote(SpecialRemote):
         self.can_notify = None  # to be figured out later, since annex.protocol.extensions is not yet accessible
         self.force_write = None
         self.uuid = None
+        self.ignore_remote_config = None
+        self.remote_log_enabled = None
 
         # for caching the remote's layout locations:
         self.remote_git_dir = None
@@ -542,6 +544,9 @@ class RIARemote(SpecialRemote):
         # version mismatch.
         self.force_write = _get_gitcfg(
             gitdir, 'annex.ria-remote.{}.force-write'.format(name))
+
+        # whether to ignore config flags set at the remote end
+        self.ignore_remote_config = _get_gitcfg(gitdir, 'annex.ria-remote.{}.ignore-remote-config'.format(name))
 
     def _verify_config(self, gitdir, fail_noid=True):
         # try loading all needed info from git config
@@ -576,6 +581,21 @@ class RIARemote(SpecialRemote):
 
         if not self.force_write:
             self.force_write = self.annex.getconfig('force-write')
+
+    def _get_version_config(self, path):
+        """ Get version and config flags from remote file
+        """
+
+        file_content = self.io.read_file(path).strip().split('|')
+        assert 1 <= len(file_content) <= 2, "invalid version file {}".format(path)
+        remote_version = file_content[0]
+        remote_config_flags = file_content[1]
+        if not self.ignore_remote_config:
+            # Note: 'or', since config flags can come from toplevel (dataset-tree-root) as well as
+            #       from dataset-level.
+            self.remote_log_enabled = self.remote_log_enabled or 'l' in remote_config_flags
+
+        return remote_version
 
     @handle_errors
     def initremote(self):
@@ -638,12 +658,7 @@ class RIARemote(SpecialRemote):
 
         # 1. check dataset tree version
         try:
-            remote_dataset_tree_version = self.io.read_file(dataset_tree_version_file).strip()
-            parts = remote_dataset_tree_version.split('|')
-            remote_dataset_tree_version = parts[0]
-            config_flags = parts[1]
-            self.remote_log_enabled = 'l' in config_flags
-
+            remote_dataset_tree_version = self._get_version_config(dataset_tree_version_file)
             if remote_dataset_tree_version != self._dataset_tree_version:
                 # Note: In later versions, condition might change in order to deal with older versions
                 self._info("Remote dataset tree reports version {}. Supported version is {}. Consider upgrading "
@@ -673,7 +688,7 @@ class RIARemote(SpecialRemote):
 
         # 2. check (annex) object tree version
         try:
-            remote_object_tree_version = self.io.read_file(object_tree_version_file).strip()
+            remote_object_tree_version = self._get_version_config(object_tree_version_file)
             if remote_object_tree_version != self._object_tree_version:
                 self._info("Remote object tree reports version {}. Supported version is {}. Consider upgrading "
                            "git-annex-ria-remote.".format(remote_object_tree_version, self._object_tree_version))

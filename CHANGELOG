@@ -1,3 +1,7 @@
+0.6.1 (Nov 13, 2019) -- Grrrr
+
+- Disabled package metadata to get upload to PyPi done.
+
 0.6 (Nov 12, 2019) -- Only for export
 
 - New DataLab subcommand 'ria-export-archive' for exporting a local annex

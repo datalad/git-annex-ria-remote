@@ -587,8 +587,8 @@ class RIARemote(SpecialRemote):
         file_content = self.io.read_file(path).strip().split('|')
         assert 1 <= len(file_content) <= 2, "invalid version file {}".format(path)
         remote_version = file_content[0]
-        remote_config_flags = file_content[1]
-        if not self.ignore_remote_config:
+        remote_config_flags = file_content[1] if len(file_content) == 2 else None
+        if not self.ignore_remote_config and remote_config_flags:
             # Note: 'or', since config flags can come from toplevel (dataset-tree-root) as well as
             #       from dataset-level.
             self.remote_log_enabled = self.remote_log_enabled or 'l' in remote_config_flags

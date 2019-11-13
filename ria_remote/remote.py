@@ -488,11 +488,12 @@ def handle_errors(func):
         except Exception as e:
             if self.remote_log_enabled:
                 from datetime import datetime
-
+                from traceback import format_exc
+                exc_str = format_exc()
+                entry = "{time}: Error:\n{exc_str}\n".format(time=datetime.now(),
+                                                                exc_str=exc_str)
                 log_target = self.objtree_base_path / 'error_logs' / "{dsid}.{uuid}.log".format(dsid=self.archive_id,
                                                                                                 uuid=self.uuid)
-                entry = "{time}: {error}".format(time=datetime.now(),
-                                                 error=str(e))
                 self.io.write_file(log_target, entry, mode='a')
             if not isinstance(e, RIARemoteError):
                 raise RIARemoteError(str(e))

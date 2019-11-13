@@ -823,9 +823,10 @@ class RIARemote(SpecialRemote):
     def whereis(self, key):
         dsobj_dir, archive_path, key_path = self._get_obj_location(key)
         return str(key_path) if self._local_io() \
-            else '{}:{}'.format(
+            else '{}: {}:{}'.format(
                 self.storage_host,
-                sh_quote(str(key_path)),  # TODO: Shouldn't we report the entire path (i.e. dsobj_dir + key_path)?  => dspath:keypath
+                self.remote_git_dir,
+                sh_quote(str(key_path)),
         )
 
     @staticmethod

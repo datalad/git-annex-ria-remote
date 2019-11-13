@@ -491,13 +491,14 @@ def handle_errors(func):
         try:
             return func(self, *args, **kwargs)
         except Exception as e:
-            from datetime import datetime
+            if self.remote_log_enabled:
+                from datetime import datetime
 
-            log_target = self.objtree_base_path / 'error_logs' / "{dsid}.{uuid}.log".format(dsid=self.archive_id,
-                                                                                            uuid=self.uuid)
-            entry = "{time}: {error}".format(time=datetime.now(),
-                                             error=str(e))
-            self.io.write_file(log_target, entry, mode='a')
+                log_target = self.objtree_base_path / 'error_logs' / "{dsid}.{uuid}.log".format(dsid=self.archive_id,
+                                                                                                uuid=self.uuid)
+                entry = "{time}: {error}".format(time=datetime.now(),
+                                                 error=str(e))
+                self.io.write_file(log_target, entry, mode='a')
             raise RIARemoteError(str(e))
 
     return new_func
@@ -638,6 +639,11 @@ class RIARemote(SpecialRemote):
         # 1. check dataset tree version
         try:
             remote_dataset_tree_version = self.io.read_file(dataset_tree_version_file).strip()
+            parts = remote_dataset_tree_version.split('|')
+            remote_dataset_tree_version = parts[0]
+            config_flags = parts[1]
+            self.remote_log_enabled = 'l' in config_flags
+
             if remote_dataset_tree_version != self._dataset_tree_version:
                 # Note: In later versions, condition might change in order to deal with older versions
                 self._info("Remote dataset tree reports version {}. Supported version is {}. Consider upgrading "

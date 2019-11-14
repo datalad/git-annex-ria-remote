@@ -1,3 +1,22 @@
+0.6.1 (Nov 13, 2019) -- Grrrr
+
+- Disabled package metadata to get upload to PyPi done.
+
+0.6 (Nov 12, 2019) -- Only for export
+
+- New DataLab subcommand 'ria-export-archive' for exporting a local annex
+  object store into a 7z archive for use with the RIA special remote.
+- Ongoing data transfers are now using a remote-specific temporary directory
+  to prevent collisions.
+
+0.5 (Sep 27, 2019) -- Speed!
+
+- Communication with an SSH host is now done via a persistent remote shell
+  session. This massively reduces the command latency on systems that are
+  slow in providing a new session.
+- Further minimization of the number of commands that are executed on
+  remote systems.
+
 0.4 (Aug 20, 2019) -- Tests!
 
 - Package now called 'ria-remote' on PyPi

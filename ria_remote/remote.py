@@ -354,6 +354,12 @@ class SSHRemoteIO(IOBase):
         self.ssh.put(str(src), str(dst))
 
     def get(self, src, dst):
+
+        # Note, that as we are in blocking mode, we can't easily fail on the actual get (that is 'cat').
+        # Therefore check beforehand.
+        if not self.exists(src):
+            raise RIARemoteError("annex object {src} does not exist.".format(src=src))
+
         # TODO: see get_from_archive()
 
         # TODO: Currently we will hang forever if the file isn't readable and it's supposed size is bigger than whatever
@@ -419,6 +425,12 @@ class SSHRemoteIO(IOBase):
         return loc in out
 
     def get_from_archive(self, archive, src, dst):
+
+        # Note, that as we are in blocking mode, we can't easily fail on the actual get (that is 'cat').
+        # Therefore check beforehand.
+        if not self.exists(archive):
+            raise RIARemoteError("archive {arc} does not exist.".format(arc=archive))
+
 
         # TODO: We probably need to check exitcode on stderr (via marker). If archive or content is missing we will
         #       otherwise hang forever waiting for stdout to fill `size`

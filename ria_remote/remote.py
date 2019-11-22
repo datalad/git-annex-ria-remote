@@ -856,7 +856,7 @@ class RIARemote(SpecialRemote):
         # Note2: archive_path is always the same ATM. However, it might depend on `key` in the future.
         #        Therefore build the actual filename for the archive herein as opposed to `get_layout_locations`.
 
-        key_dir = self.annex.dirhash_lower(key)
+        key_dir = self.annex.dirhash(key)
         # double 'key' is not a mistake, but needed to achieve the exact same
         # layout as the 'directory'-type special remote
         key_path = Path(key_dir) / key / key

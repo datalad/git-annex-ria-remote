@@ -104,18 +104,25 @@ placing a snippet like this in `$HOME/.ssh/config`:
       Port 2222
       PreferredAuthentications publickey
 
-There are additional configurations available:
+There are additional configuration settings available:
 
-- By default ria-remote will check the remote end's layout version by reading a `ria-layout-version` file at the 
-  toplevel (`base-path`) as well as at the individual dataset directories. If the layout version isn't known it will set 
-  its mode to "read-only" and will reject to write anything to that store in order to not accidentally mix up different 
-  layouts. This behavior can be overwriten by setting `annex.ria-remote.<name>.force-write` to `true`.
-- The remote end can be configured to write any occuring exception into a log file. This can be particularly helpful in 
-  case of some kind of a central storage used by multiple user to look into general issues. For this to be used, the
-  version recorded in that `ria-layout-version` file can be appended by `|l` (for logging). If done at the toplevel this 
-  will applied to all datasets. However, since that kind of log can potentially leak information one does not want to be 
-  leaked and the general notion of having a distributed system that can be configured by a remote side is problematic,
-  this configuration can be ignored by any client by setting `annex.ria-remote.<name>.ignore-remote-config`.       
+- By default ria-remote will check the remote end's layout version by reading a
+  `ria-layout-version` file at the top-level (`base-path`) as well as at the
+  individual dataset directories. If the layout version isn't known it will set
+  its mode to "read-only" and will reject to write anything to that store in
+  order to not accidentally mix up different layouts. This behavior can be
+  overwritten by setting `annex.ria-remote.<name>.force-write` to `true`.
+
+- The remote end can indicate that any occurring exception shall be written to
+  a log file. This can be helpful for debugging problems in a multi-user
+  central storage scenario. For this to be used, the version recorded in the
+  `ria-layout-version` file can be appended by `|l` ('l' for logging). If done at
+  the top of the dataset tree, this will applied to all datasets.  However, since
+  such a log can potentially leak private information, this configuration can be
+  ignored by any client by setting
+  `annex.ria-remote.<name>.ignore-remote-config`. There is no independent
+  server-side processing, and all actions are performed by the client-side
+  special remote instance.
 
 ## Support
 

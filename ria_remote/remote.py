@@ -751,6 +751,12 @@ class RIARemote(SpecialRemote):
 
         dsobj_dir, archive_path, key_path = self._get_obj_location(key)
         key_path = dsobj_dir / key_path
+
+        if self.io.exists(key_path):
+            # if the key is here, we trust that the content is in sync
+            # with the key
+            return
+
         self.io.mkdir(key_path.parent)
 
         # we need to copy to a temp location to let

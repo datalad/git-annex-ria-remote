@@ -12,7 +12,6 @@ __docformat__ = 'restructuredtext'
 
 
 import logging
-import os
 import re
 import posixpath
 from datalad import cfg as dlcfg
@@ -23,7 +22,6 @@ from datalad.interface.utils import eval_results
 from datalad.support.param import Parameter
 from datalad.support.constraints import (
     EnsureNone,
-    EnsureBool,
     EnsureStr,
 )
 from datalad.distribution.dataset import (
@@ -31,7 +29,6 @@ from datalad.distribution.dataset import (
     datasetmethod,
 )
 from datalad.distribution.clone import Clone
-from datalad.utils import rmtree
 
 lgr = logging.getLogger('ria_remote.install')
 
@@ -54,6 +51,7 @@ class Install(Clone):
             action='store_true'),
 
     )
+
     @staticmethod
     @datasetmethod(name='ria_install')
     @eval_results
@@ -62,6 +60,7 @@ class Install(Clone):
             path=None,
             dataset=None,
             description=None,
+            reckless=False,
             alt_sources=None,
             ephemeral=False):
 
@@ -132,50 +131,18 @@ class Install(Clone):
             # we will have seen an error already
             return
 
+        # all config is done in a procedure that is also available for
+        # execution on subdatasets
+        proc_args = ['ria_post_install']
+        if ephemeral:
+            proc_args.append('ephemeral')
+        if reckless:
+            proc_args.append('reckless')
+        target_ds.run_procedure(proc_args)
+
         #
-        # This should all be a post-processing dataset procedure
-        # that can be applied to any future subdataset too
-        # TODO: procedure should check if dataset ID exists in store
-        # and only then perform linking
-        #
+        # TODO configure dataset to run this procedure after
+        # every get/install of a subdataset
         # TODO enhance datalad to trigger it whenever it seen
         # an action:install;status:ok result
-
-        # we don't want annex copy-to origin
-        target_ds.config.set(
-            'remote.origin.annex-ignore', 'true',
-            where='local')
-
-        for r in target_ds.siblings(
-                'configure',
-                name='origin',
-                publish_depends=src['store'],
-                result_filter=None,
-                result_renderer='disabled'):
-            yield r
-
-        linked_annex = ephemeral and not sshhost
-
-        # the RIA store is the primary store, untrust this clone by default
-        # ephemeral or not
-        # with ephemeral we declare 'here' as 'dead' right away, whenever
-        # we symlink origins annex. Because we want annex to copy to
-        # inm7-storage to get availability info correct for an eventual
-        # git-push into the store
-        # this will cause stull like this for a locally present annexed file:
-        # % git annex whereis d1
-        # whereis d1 (0 copies) failed
-        # BUT this works:
-        # % git annex find . --not --in here
-        # % git annex find . --in here
-        # d1
-        target_ds.repo._run_annex_command(
-            # untrust is already implied by --reckless above, but
-            # we want to make sure here
-            'dead' if linked_annex else 'untrust',
-            annex_options=['here'])
-
-        if linked_annex:
-            annex_dir = str(target_ds.repo.dot_git / 'annex')
-            rmtree(annex_dir)
-            os.symlink(posixpath.join(store_dspath, 'annex'), annex_dir)
+        #

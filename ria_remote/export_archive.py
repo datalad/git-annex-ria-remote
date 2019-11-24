@@ -156,8 +156,7 @@ class ExportArchive(Interface):
 
         for keypath in keypaths:
             key = keypath.name
-            md5sum = md5(key.encode()).hexdigest()
-            hashdir = op.join(md5sum[:3], md5sum[3:6])
+            hashdir = op.join(keypath.parts[-4], keypath.parts[-3])
             log_progress(
                 lgr.info,
                 'riaarchiveexport',

@@ -519,8 +519,10 @@ class RIARemote(SpecialRemote):
     """This is the class of RIA remotes.
     """
 
-    _dataset_tree_version = '1'
-    _object_tree_version = '1'
+    dataset_tree_version = '1'
+    object_tree_version = '2'
+    known_versions_objt = ['1', '2']
+    known_versions_dst = ['1']
 
     @handle_errors
     def __init__(self, annex):
@@ -538,6 +540,8 @@ class RIARemote(SpecialRemote):
         self.uuid = None
         self.ignore_remote_config = None
         self.remote_log_enabled = None
+        self.remote_dataset_tree_version = None
+        self.remote_object_tree_version = None
 
         # for caching the remote's layout locations:
         self.remote_git_dir = None
@@ -598,12 +602,15 @@ class RIARemote(SpecialRemote):
         """
 
         file_content = self.io.read_file(path).strip().split('|')
-        assert 1 <= len(file_content) <= 2, "invalid version file {}".format(path)
+        if not (1 <= len(file_content) <= 2):
+            self._info("invalid version file {}".format(path))
+            return None
+
         remote_version = file_content[0]
         remote_config_flags = file_content[1] if len(file_content) == 2 else None
         if not self.ignore_remote_config and remote_config_flags:
             # Note: 'or', since config flags can come from toplevel (dataset-tree-root) as well as
-            #       from dataset-level.
+            #       from dataset-level. toplevel is supposed flag the entire tree.
             self.remote_log_enabled = self.remote_log_enabled or 'l' in remote_config_flags
 
         return remote_version
@@ -669,12 +676,12 @@ class RIARemote(SpecialRemote):
 
         # 1. check dataset tree version
         try:
-            remote_dataset_tree_version = self._get_version_config(dataset_tree_version_file)
-            if remote_dataset_tree_version != self._dataset_tree_version:
+            self.remote_dataset_tree_version = self._get_version_config(dataset_tree_version_file)
+            if self.remote_dataset_tree_version not in self.known_versions_dst:
                 # Note: In later versions, condition might change in order to deal with older versions
-                self._info("Remote dataset tree reports version {}. Supported version is {}. Consider upgrading "
+                self._info("Remote dataset tree reports version {}. Supported versions are: {}. Consider upgrading "
                            "git-annex-ria-remote or fix the structure on the remote end."
-                           "".format(remote_dataset_tree_version, self._dataset_tree_version))
+                           "".format(self.remote_dataset_tree_version, self.known_versions_dst))
                 self._set_read_only(read_only_msg)
 
         except (RemoteError, FileNotFoundError):  # depends on whether self.io is local or ssh
@@ -684,7 +691,7 @@ class RIARemote(SpecialRemote):
             if not self.io.exists(dataset_tree_version_file.parent):
                 # we are first, just put our stamp on it
                 self.io.mkdir(dataset_tree_version_file.parent)
-                self.io.write_file(dataset_tree_version_file, self._dataset_tree_version)
+                self.io.write_file(dataset_tree_version_file, self.dataset_tree_version)
             else:
                 # directory is there, but no version file. We don't know what that is. Treat the same way as if there
                 # was an unknown version on record
@@ -694,16 +701,16 @@ class RIARemote(SpecialRemote):
 
         # 2. check (annex) object tree version
         try:
-            remote_object_tree_version = self._get_version_config(object_tree_version_file)
-            if remote_object_tree_version != self._object_tree_version:
-                self._info("Remote object tree reports version {}. Supported version is {}. Consider upgrading "
-                           "git-annex-ria-remote.".format(remote_object_tree_version, self._object_tree_version))
+            self.remote_object_tree_version = self._get_version_config(object_tree_version_file)
+            if self.remote_object_tree_version not in self.known_versions_objt:
+                self._info("Remote object tree reports version {}. Supported versions are {}. Consider upgrading "
+                           "git-annex-ria-remote.".format(self.remote_object_tree_version, self.known_versions_objt))
                 self._set_read_only(read_only_msg)
         except (RemoteError, FileNotFoundError):
             if not self.io.exists(object_tree_version_file.parent):
                 # we are first, just put our stamp on it
                 self.io.mkdir(object_tree_version_file.parent)
-                self.io.write_file(object_tree_version_file, self._object_tree_version)
+                self.io.write_file(object_tree_version_file, self.object_tree_version)
             else:
                 self._info("Remote doesn't report any object tree version. Consider upgrading git-annex-ria-remote or "
                            "fix the structure on the remote end.")
@@ -862,7 +869,12 @@ class RIARemote(SpecialRemote):
         # Note2: archive_path is always the same ATM. However, it might depend on `key` in the future.
         #        Therefore build the actual filename for the archive herein as opposed to `get_layout_locations`.
 
-        key_dir = self.annex.dirhash_lower(key)
+        # If we didn't recognize the remote layout version, we set to read-only and promised to at least try and read
+        # according to our current version. So, treat that case as if remote version was our (client's) version.
+        if self.remote_object_tree_version == '1':
+            key_dir = self.annex.dirhash_lower(key)
+        else:
+            key_dir = self.annex.dirhash(key)
         # double 'key' is not a mistake, but needed to achieve the exact same
         # layout as the 'directory'-type special remote
         key_path = Path(key_dir) / key / key

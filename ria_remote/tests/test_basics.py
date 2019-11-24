@@ -33,9 +33,8 @@ from ria_remote.tests.utils import (
 
 @with_tempfile(mkdir=True)
 @with_tempfile()
-@with_tempfile(mkdir=True)
 @with_tempfile()
-def test_archive_layout(path, objtree, dirremote, archivremote):
+def test_archive_layout(path, objtree, archivremote):
     ds = create(path)
     setup_archive_remote(ds.repo, objtree)
     populate_dataset(ds)
@@ -45,14 +44,7 @@ def test_archive_layout(path, objtree, dirremote, archivremote):
     # copy files into the RIA archive
     ds.repo.copy_to('.', 'archive')
 
-    # set up a directory-type remote for comparison
-    initremote(ds.repo, 'dir', config={
-        'type': 'directory',
-        'directory': dirremote,
-    })
-    # and copy there too
-    ds.repo.copy_to('.', 'dir')
-    # we should see the exact same organization in both remotes
+    # we should see the exact same annex object tree
     arxiv_files = get_all_files(objtree)
     # anything went there at all?
     assert len(arxiv_files) > 1
@@ -62,7 +54,10 @@ def test_archive_layout(path, objtree, dirremote, archivremote):
 
     eq_(
         sorted([p.parts[-4:] for p in arxiv_files if p.name != 'ria-layout-version']),
-        sorted([p.parts for p in get_all_files(dirremote)])
+        # Note: datalad-master has ds.repo.dot_git Path object. Not in 0.12.0rc6 though. This would
+        # also resolve .git-files, which pathlib obv. can't. If we test more sophisticated structures, we'd need to
+        # account for that
+        sorted([p.parts for p in get_all_files(ds.pathobj / '.git' / 'annex' / 'objects')])
     )
 
     # we can simply pack up the content of the directory remote into a
@@ -152,11 +147,11 @@ def test_version_check(path, objtree):
     assert remote_ds_tree_version_file.exists()
     assert remote_obj_tree_version_file.exists()
 
-    # Currently the content of booth should be "1"
+    # Currently the content of booth should be "2"
     with open(str(remote_ds_tree_version_file), 'r') as f:
         eq_(f.read().strip(), '1')
     with open(str(remote_obj_tree_version_file), 'r') as f:
-        eq_(f.read().strip(), '1')
+        eq_(f.read().strip(), '2')
 
     # Accessing the remote should not yield any output regarding versioning, since it's the "correct" version
     # Note that "fsck" is an arbitrary choice. We need just something to talk to the special remote
@@ -166,12 +161,12 @@ def test_version_check(path, objtree):
 
     # Now fake-change the version
     with open(str(remote_obj_tree_version_file), 'w') as f:
-        f.write('2\n')
+        f.write('X\n')
 
     # Now we should see a message about it
     with swallow_logs(new_level=logging.INFO) as cml:
         ds.repo.fsck(remote='archive', fast=True)
-        cml.assert_logged(level="INFO", msg="Remote object tree reports version 2", regex=False)
+        cml.assert_logged(level="INFO", msg="Remote object tree reports version X", regex=False)
         cml.assert_logged(level="INFO", msg="Setting remote to read-only usage", regex=False)
 
     # reading still works:

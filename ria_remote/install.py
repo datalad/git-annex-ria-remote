@@ -104,7 +104,7 @@ class Install(Clone):
 
         # build the actual clone source url
         clone_src = '{host}{delim}{path}'.format(
-            host=sshhost if sshhost else '',
+            host="ssh://{}".format(sshhost) if sshhost else '',
             delim=':' if sshhost else '',
             path=posixpath.join(
                 cfg.get(basepath_var),

@@ -218,8 +218,8 @@ class SSHRemoteIO(IOBase):
     """
 
     # output markers to detect possible command failure as well as end of output from a particular command:
-    REMOTE_CMD_FAIL = "ria-remote: end - fail"
-    REMOTE_CMD_OK = "ria-remote: end - ok"
+    REMOTE_CMD_FAIL = "ria-remote: end - fail\n"
+    REMOTE_CMD_OK = "ria-remote: end - ok\n"
 
     def __init__(self, host):
         """
@@ -332,10 +332,10 @@ class SSHRemoteIO(IOBase):
         while True:
             line = self.shell.stdout.readline().decode()
             lines.append(line)
-            if line == self.REMOTE_CMD_OK + '\n':
+            if line == self.REMOTE_CMD_OK:
                 # end reading
                 break
-            elif line == self.REMOTE_CMD_FAIL + '\n':
+            elif line == self.REMOTE_CMD_FAIL:
                 if check:
                     raise RemoteCommandFailedError("{cmd} failed: {msg}".format(cmd=cmd,
                                                                                 msg="".join(lines[:-1]))
@@ -691,7 +691,7 @@ class RIARemote(SpecialRemote):
             if not self.io.exists(dataset_tree_version_file.parent):
                 # we are first, just put our stamp on it
                 self.io.mkdir(dataset_tree_version_file.parent)
-                self.io.write_file(dataset_tree_version_file, self.dataset_tree_version)
+                self.io.write_file(dataset_tree_version_file, self.dataset_tree_version + '\n')
             else:
                 # directory is there, but no version file. We don't know what that is. Treat the same way as if there
                 # was an unknown version on record
@@ -710,7 +710,7 @@ class RIARemote(SpecialRemote):
             if not self.io.exists(object_tree_version_file.parent):
                 # we are first, just put our stamp on it
                 self.io.mkdir(object_tree_version_file.parent)
-                self.io.write_file(object_tree_version_file, self.object_tree_version)
+                self.io.write_file(object_tree_version_file, self.object_tree_version + '\n')
             else:
                 self._info("Remote doesn't report any object tree version. Consider upgrading git-annex-ria-remote or "
                            "fix the structure on the remote end.")

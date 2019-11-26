@@ -117,7 +117,7 @@ class Install(Clone):
                 path=path,
                 dataset=dataset,
                 description=description,
-                reckless=ephemeral,
+                reckless=reckless,
                 alt_sources=alt_sources,
                 result_filter=None,
                 result_renderer='disabled',

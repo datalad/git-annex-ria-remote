@@ -218,8 +218,8 @@ class SSHRemoteIO(IOBase):
     """
 
     # output markers to detect possible command failure as well as end of output from a particular command:
-    REMOTE_CMD_FAIL = "ria-remote: end - fail\n"
-    REMOTE_CMD_OK = "ria-remote: end - ok\n"
+    REMOTE_CMD_FAIL = "ria-remote: end - fail"
+    REMOTE_CMD_OK = "ria-remote: end - ok"
 
     def __init__(self, host):
         """
@@ -332,10 +332,10 @@ class SSHRemoteIO(IOBase):
         while True:
             line = self.shell.stdout.readline().decode()
             lines.append(line)
-            if line == self.REMOTE_CMD_OK:
+            if line == self.REMOTE_CMD_OK + '\n':
                 # end reading
                 break
-            elif line == self.REMOTE_CMD_FAIL:
+            elif line == self.REMOTE_CMD_FAIL + '\n':
                 if check:
                     raise RemoteCommandFailedError("{cmd} failed: {msg}".format(cmd=cmd,
                                                                                 msg="".join(lines[:-1]))
@@ -343,8 +343,7 @@ class SSHRemoteIO(IOBase):
                 else:
                     break
         if no_output and len(lines) > 1:
-            failed_cmd = cmd.split()[0]
-            raise RIARemoteError("{}: {}".format(failed_cmd, "".join(lines[:-1])))
+            raise RIARemoteError("{}: {}".format(call, "".join(lines)))
         return "".join(lines[:-1])
 
     def mkdir(self, path):
@@ -412,6 +411,9 @@ class SSHRemoteIO(IOBase):
 
     def in_archive(self, archive_path, file_path):
 
+        if not self.exists(archive_path):
+            return False
+
         loc = str(file_path)
         # query 7z for the specific object location, keeps the output
         # lean, even for big archives
@@ -430,7 +432,6 @@ class SSHRemoteIO(IOBase):
         # Therefore check beforehand.
         if not self.exists(archive):
             raise RIARemoteError("archive {arc} does not exist.".format(arc=archive))
-
 
         # TODO: We probably need to check exitcode on stderr (via marker). If archive or content is missing we will
         #       otherwise hang forever waiting for stdout to fill `size`
@@ -690,7 +691,9 @@ class RIARemote(SpecialRemote):
             #       Don't think so ATM
             if not self.io.exists(dataset_tree_version_file.parent):
                 # we are first, just put our stamp on it
-                self.io.mkdir(dataset_tree_version_file.parent)
+                # ensure we have a store and simultaneously ensure the error log subdir
+                self.io.mkdir(dataset_tree_version_file.parent / 'error_logs')
+
                 self.io.write_file(dataset_tree_version_file, self.dataset_tree_version + '\n')
             else:
                 # directory is there, but no version file. We don't know what that is. Treat the same way as if there
@@ -709,7 +712,8 @@ class RIARemote(SpecialRemote):
         except (RemoteError, FileNotFoundError):
             if not self.io.exists(object_tree_version_file.parent):
                 # we are first, just put our stamp on it
-                self.io.mkdir(object_tree_version_file.parent)
+                # ensure we have a ds dir and simultaneously ensure the archives subdir
+                self.io.mkdir(object_tree_version_file.parent / 'archives')
                 self.io.write_file(object_tree_version_file, self.object_tree_version + '\n')
             else:
                 self._info("Remote doesn't report any object tree version. Consider upgrading git-annex-ria-remote or "
@@ -795,13 +799,16 @@ class RIARemote(SpecialRemote):
         # we can either repeat the checks, or just make two opportunistic
         # attempts (at most)
         try:
+            self._info("Trying to get object:  %s\t%s" % (abs_key_path, filename))
             self.io.get(abs_key_path, filename)
+            self._info("Got object:  %s\t%s" % (abs_key_path, filename))
         except Exception as e1:
             # catch anything and keep it around for a potential re-raise
+            self._info("FAILED to get object:  %s" % str(e1))
             try:
                 self.io.get_from_archive(archive_path, key_path, filename)
             except Exception as e2:
-                raise RIARemoteError('Failed to key: {}'.format([e1, e2]))
+                raise RIARemoteError('Failed to key: {}'.format([str(e1), str(e2)]))
 
     @handle_errors
     def checkpresent(self, key):

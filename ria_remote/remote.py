@@ -343,8 +343,7 @@ class SSHRemoteIO(IOBase):
                 else:
                     break
         if no_output and len(lines) > 1:
-            failed_cmd = cmd.split()[0]
-            raise RIARemoteError("{}: {}".format(failed_cmd, "".join(lines[:-1])))
+            raise RIARemoteError("{}: {}".format(call, "".join(lines)))
         return "".join(lines[:-1])
 
     def mkdir(self, path):
@@ -412,6 +411,9 @@ class SSHRemoteIO(IOBase):
 
     def in_archive(self, archive_path, file_path):
 
+        if not self.exists(archive_path):
+            return False
+
         loc = str(file_path)
         # query 7z for the specific object location, keeps the output
         # lean, even for big archives
@@ -430,7 +432,6 @@ class SSHRemoteIO(IOBase):
         # Therefore check beforehand.
         if not self.exists(archive):
             raise RIARemoteError("archive {arc} does not exist.".format(arc=archive))
-
 
         # TODO: We probably need to check exitcode on stderr (via marker). If archive or content is missing we will
         #       otherwise hang forever waiting for stdout to fill `size`
@@ -690,8 +691,10 @@ class RIARemote(SpecialRemote):
             #       Don't think so ATM
             if not self.io.exists(dataset_tree_version_file.parent):
                 # we are first, just put our stamp on it
-                self.io.mkdir(dataset_tree_version_file.parent)
-                self.io.write_file(dataset_tree_version_file, self.dataset_tree_version)
+                # ensure we have a store and simultaneously ensure the error log subdir
+                self.io.mkdir(dataset_tree_version_file.parent / 'error_logs')
+
+                self.io.write_file(dataset_tree_version_file, self.dataset_tree_version + '\n')
             else:
                 # directory is there, but no version file. We don't know what that is. Treat the same way as if there
                 # was an unknown version on record
@@ -709,8 +712,9 @@ class RIARemote(SpecialRemote):
         except (RemoteError, FileNotFoundError):
             if not self.io.exists(object_tree_version_file.parent):
                 # we are first, just put our stamp on it
-                self.io.mkdir(object_tree_version_file.parent)
-                self.io.write_file(object_tree_version_file, self.object_tree_version)
+                # ensure we have a ds dir and simultaneously ensure the archives subdir
+                self.io.mkdir(object_tree_version_file.parent / 'archives')
+                self.io.write_file(object_tree_version_file, self.object_tree_version + '\n')
             else:
                 self._info("Remote doesn't report any object tree version. Consider upgrading git-annex-ria-remote or "
                            "fix the structure on the remote end.")

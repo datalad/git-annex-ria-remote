@@ -9,6 +9,7 @@ import posixpath
 
 from datalad.distribution.dataset import require_dataset
 from datalad.utils import rmtree
+from ria_remote import RIARemote
 
 
 lgr = logging.getLogger('datalad.procedure.ria_post_install')
@@ -26,7 +27,7 @@ def proc_ria_remote(ds, rm, origin, special_remotes, ephemeral, reckless):
             'ria_post_install logic error: active RIA special '
             'remote without base-path setting')
         return
-    dspath_in_ria = (base_path, ds.id[:3], ds.id[3:])
+    dspath_in_ria, _, _ = RIARemote.get_layout_locations(base_path, ds.id)
     if not (origin_remote['url'].endswith(posixpath.join(*dspath_in_ria)) or
             origin_remote['url'] == os.path.join(*dspath_in_ria)):
         # we have no business here. neither a local, nor a remote clone

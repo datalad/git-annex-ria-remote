@@ -6,6 +6,7 @@ import logging
 import sys
 import os
 import posixpath
+from pathlib import PosixPath
 
 from datalad.distribution.dataset import require_dataset
 from datalad.utils import rmtree
@@ -20,6 +21,8 @@ def proc_ria_remote(ds, rm, origin, special_remotes, ephemeral, reckless):
     # base-path must be somewhere, otherwise it could not be active
     base_path = ds.config.get(
         'annex.ria-remote.{}.base-path'.format(rm['name']), None)
+    sshhost = ds.config.get(
+        'annex.ria-remote.{}.ssh-host'.format(rm['name']), None)
     if not base_path:
         base_path = special_remote_info.get('base-path', None)
     if not base_path:
@@ -34,17 +37,28 @@ def proc_ria_remote(ds, rm, origin, special_remotes, ephemeral, reckless):
         # from this RIA store
         return
 
-    # we don't want annex copy-to origin
-    ds.config.set(
-        'remote.origin.annex-ignore', 'true',
-        where='local')
-
     ds.siblings(
         'configure',
         name='origin',
         publish_depends=rm['name'],
         result_filter=None,
         result_renderer='disabled')
+
+    ds.config.set(
+        'datalad.clone.proc-post', 'ria_post_install {} {}'.format(
+            'ephemeral' if ephemeral else '',
+            'reckless' if reckless else '',
+        ),
+        where='local')
+
+    ds.config.set(
+        'datalad.get.subdataset-source-candidate-{}'.format(rm['name']),
+        '{host}{path}'.format(
+            host=sshhost + ':' if sshhost else '',
+            # TODO think about making this work in windows too
+            path=PosixPath(base_path) / '{id:.3}/{id[3]}{id[4]}{id[5]}{id[6]}{id[7]}{id[8]}{id[9]}{id[10]}{id[11]}{id[12]}{id[13]}{id[14]}{id[15]}{id[16]}{id[17]}{id[18]}{id[19]}{id[20]}{id[21]}{id[22]}{id[23]}{id[24]}{id[25]}{id[26]}{id[27]}{id[28]}{id[29]}{id[30]}{id[31]}{id[32]}{id[33]}{id[34]}{id[35]}',
+        ),
+        where='local')
 
     if ephemeral:
         # with ephemeral we declare 'here' as 'dead' right away, whenever
@@ -58,12 +72,19 @@ def proc_ria_remote(ds, rm, origin, special_remotes, ephemeral, reckless):
         # % git annex find . --not --in here
         # % git annex find . --in here
         # d1
+
+        # we don't want annex copy-to origin
+        ds.config.set(
+            'remote.origin.annex-ignore', 'true',
+            where='local')
+
         ds.repo._run_annex_command('dead', annex_options=['here'])
 
         if reckless and origin_remote['url'] == os.path.join(*dspath_in_ria):
             # cloned from a RIA store at a local path, symlink the annex
             # to avoid needless copies in an emphemeral clone
             annex_dir = ds.repo.dot_git / 'annex'
+            # TODO make sure that we do not delete any unique data
             rmtree(str(annex_dir)) \
                 if not annex_dir.is_symlink() else annex_dir.unlink()
             annex_dir.symlink_to(

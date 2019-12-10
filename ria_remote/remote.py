@@ -799,13 +799,16 @@ class RIARemote(SpecialRemote):
         # we can either repeat the checks, or just make two opportunistic
         # attempts (at most)
         try:
+            self._info("Trying to get object:  %s\t%s" % (abs_key_path, filename))
             self.io.get(abs_key_path, filename)
+            self._info("Got object:  %s\t%s" % (abs_key_path, filename))
         except Exception as e1:
             # catch anything and keep it around for a potential re-raise
+            self._info("FAILED to get object:  %s" % str(e1))
             try:
                 self.io.get_from_archive(archive_path, key_path, filename)
             except Exception as e2:
-                raise RIARemoteError('Failed to key: {}'.format([e1, e2]))
+                raise RIARemoteError('Failed to key: {}'.format([str(e1), str(e2)]))
 
     @handle_errors
     def checkpresent(self, key):

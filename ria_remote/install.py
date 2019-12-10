@@ -29,6 +29,7 @@ from datalad.distribution.dataset import (
     datasetmethod,
 )
 from datalad.distribution.clone import Clone
+from .remote import RIARemote
 
 lgr = logging.getLogger('ria_remote.install')
 
@@ -97,19 +98,13 @@ class Install(Clone):
             sshhost = None
 
         # only POSIX for now
-        store_dspath = posixpath.join(
-            cfg.get(basepath_var),
-            src['dsid'][:3],
-            src['dsid'][3:])
+        store_dspath, _, _ = RIARemote.get_layout_locations(cfg.get(basepath_var), src['dsid'])
 
         # build the actual clone source url
         clone_src = '{host}{delim}{path}'.format(
             host="ssh://{}".format(sshhost) if sshhost else '',
             delim=':' if sshhost else '',
-            path=posixpath.join(
-                cfg.get(basepath_var),
-                src['dsid'][:3],
-                src['dsid'][3:]))
+            path=store_dspath)
 
         target_ds = None
         for r in Clone.__call__(

@@ -13,6 +13,7 @@ __docformat__ = 'restructuredtext'
 
 import logging
 import re
+from pathlib import Path
 import posixpath
 from datalad import cfg as dlcfg
 from datalad.interface.base import (
@@ -98,13 +99,13 @@ class Install(Clone):
             sshhost = None
 
         # only POSIX for now
-        store_dspath, _, _ = RIARemote.get_layout_locations(cfg.get(basepath_var), src['dsid'])
+        store_dspath, _, _ = RIARemote.get_layout_locations(Path(cfg.get(basepath_var)), src['dsid'])
 
         # build the actual clone source url
         clone_src = '{host}{delim}{path}'.format(
             host="ssh://{}".format(sshhost) if sshhost else '',
             delim=':' if sshhost else '',
-            path=store_dspath)
+            path=str(store_dspath))
 
         target_ds = None
         for r in Clone.__call__(

@@ -6,8 +6,10 @@ import logging
 import sys
 import os
 import posixpath
-from pathlib import PosixPath
-
+from pathlib import (
+    PosixPath,
+    Path
+)
 from datalad.distribution.dataset import require_dataset
 from datalad.utils import rmtree
 from ria_remote import RIARemote
@@ -30,9 +32,9 @@ def proc_ria_remote(ds, rm, origin, special_remotes, ephemeral, reckless):
             'ria_post_install logic error: active RIA special '
             'remote without base-path setting')
         return
-    dspath_in_ria, _, _ = RIARemote.get_layout_locations(base_path, ds.id)
-    if not (origin_remote['url'].endswith(posixpath.join(*dspath_in_ria)) or
-            origin_remote['url'] == os.path.join(*dspath_in_ria)):
+    dspath_in_ria, _, _ = RIARemote.get_layout_locations(Path(base_path), ds.id)
+    if not (origin_remote['url'].endswith(str(PosixPath(dspath_in_ria))) or
+            origin_remote['url'] == str(dspath_in_ria)):
         # we have no business here. neither a local, nor a remote clone
         # from this RIA store
         return
@@ -80,7 +82,7 @@ def proc_ria_remote(ds, rm, origin, special_remotes, ephemeral, reckless):
 
         ds.repo._run_annex_command('dead', annex_options=['here'])
 
-        if reckless and origin_remote['url'] == os.path.join(*dspath_in_ria):
+        if reckless and origin_remote['url'] == str(dspath_in_ria):
             # cloned from a RIA store at a local path, symlink the annex
             # to avoid needless copies in an emphemeral clone
             annex_dir = ds.repo.dot_git / 'annex'

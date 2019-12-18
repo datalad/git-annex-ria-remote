@@ -17,5 +17,11 @@ command_suite = (
             'ria-export-archive',
             'ria_export_archive'
         ),
+        (
+            'ria_remote.install',
+            'Install',
+            'ria-install',
+            'ria_install'
+        ),
     ]
 )

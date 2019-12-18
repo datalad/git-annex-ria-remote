@@ -1,3 +1,9 @@
+0.7 (Dec 18, 2019) -- Easy Access
+
+- add `ria-install` command to install a dataset directly from a given store
+- discard the dirhashlower approach re annex/objects
+
+
 0.6.1 (Nov 13, 2019) -- Grrrr
 
 - Disabled package metadata to get upload to PyPi done.

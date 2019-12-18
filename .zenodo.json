@@ -1,0 +1,26 @@
+{
+  "creators": [
+    {
+      "affiliation": "Institute of Neuroscience and Medicine, Brain & Behaviour (INM-7), Research Centre Jülich, Jülich, Germany and Institute of Systems Neuroscience, Medical Faculty, Heinrich Heine University Düsseldorf, Düsseldorf, Germany",
+      "name": "Hanke, Michael",
+      "orcid": "0000-0001-6398-6370"
+    },
+    {
+      "affiliation": "Institute of Neuroscience and Medicine, Brain & Behaviour (INM-7), Research Centre Jülich, Jülich, Germany",
+      "name": "Poldrack, Benjamin",
+      "orcid": "0000-0001-7628-0801"
+    },
+  ],
+  "grants": [
+    {"id": "10.13039/501100002347::01GQ1411"},
+    {"id": "10.13039/501100002347::01GQ1905"}
+  ],
+  "keywords": [
+    "data management",
+    "data distribution",
+    "version control"
+  ],
+  "access_right": "open",
+  "license": "MIT",
+  "upload_type": "software"
+}

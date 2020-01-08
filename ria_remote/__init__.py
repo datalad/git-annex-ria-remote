@@ -23,5 +23,11 @@ command_suite = (
             'ria-install',
             'ria_install'
         ),
+        (
+            'ria_remote.create_sibling_ria',
+            'CreateSiblingRia',
+            'create-sibling-ria',
+            'create_sibling_ria'
+        ),
     ]
 )

@@ -32,7 +32,7 @@ from datalad.distribution.dataset import (
 from datalad.distribution.clone import Clone
 from .remote import RIARemote
 
-lgr = logging.getLogger('ria_remote.install')
+lgr = logging.getLogger('datalad.ria_remote.install')
 
 
 @build_doc

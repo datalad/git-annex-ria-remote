@@ -12,16 +12,9 @@ __docformat__ = 'restructuredtext'
 
 
 import logging
-import os
-import os.path as op
-from hashlib import md5
 import subprocess
-from argparse import REMAINDER
 from pathlib import Path
 
-from datalad.utils import (
-    rmtree,
-)
 from datalad.interface.base import (
     Interface,
     build_doc,
@@ -39,21 +32,16 @@ from datalad.distribution.dataset import (
     EnsureDataset,
     datasetmethod,
     require_dataset,
-    resolve_path,
-)
-from datalad.log import log_progress
-from datalad.dochelpers import (
-    exc_str,
 )
 
 from ria_remote.remote import RIARemote
 
-lgr = logging.getLogger('ria_remote.create_sibling_ria')
+lgr = logging.getLogger('datalad.ria_remote.create_sibling_ria')
 
 
 @build_doc
 class CreateSiblingRia(Interface):
-    """
+    """Creates a sibling to a dataset in a RIA store
 
     """
 
@@ -67,12 +55,13 @@ class CreateSiblingRia(Interface):
         sibling=Parameter(
             args=("sibling",),
             metavar="SIBLING",
-            doc="""""",
+            doc="""name of the to be created sibling""",
             constraints=EnsureStr() | EnsureNone()),
         storage_sibling=Parameter(
             args=("-s", "--storage-sibling"),
             metavar="STORAGE",
-            doc="""""",
+            doc="""name of the RIA storage sibling. Must not be identical to SIBLING. By default SIBLING is appended 
+            with '-storage'""",
             constraints=EnsureStr() | EnsureNone()),
         force=Parameter(
             args=("-f", "--force"),
@@ -111,8 +100,8 @@ class CreateSiblingRia(Interface):
             storage_sibling = "{}-storage".format(sibling)
 
         if sibling == storage_sibling:
-            # TODO:
-            raise ValueError("sibling names must not be equal")  # leads to unresolvable, circular dependency with publish-depends
+            # leads to unresolvable, circular dependency with publish-depends
+            raise ValueError("sibling names must not be equal")
 
         # TODO: messages - this is "create-sibling". Don't confuse existence of local remotes with existence of the
         #       actual remote sibling in wording
@@ -165,7 +154,7 @@ class CreateSiblingRia(Interface):
                                                        b' (Use enableremote to enable an existing special remote.)\n':
                 # run enableremote instead
                 cmd[2] = 'enableremote'
-                subprocess.run(cmd, cwd=str(dataset.path))
+                subprocess.run(cmd, cwd=str(ds.path))
             else:
                 yield get_status_dict(
                     status='error',
@@ -221,6 +210,7 @@ class CreateSiblingRia(Interface):
         ds.config.set("remote.{}.annex-ignore".format(sibling), value="true", where="local")
         yield get_status_dict(
             status='ok',
+            **res_kwargs,
         )
 
         if not no_publish:

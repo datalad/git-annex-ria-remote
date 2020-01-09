@@ -61,7 +61,8 @@ class CreateSiblingRia(Interface):
 # push initial git-history: optional? Default: YES. (we need a connection anyway)
 
 
-# --force to overwrite existing (special-) remote(s)?
+
+
 
     _params_ = dict(
         dataset=Parameter(
@@ -79,8 +80,12 @@ class CreateSiblingRia(Interface):
             args=("-s", "--storage-sibling"),
             metavar="STORAGE",
             doc="""""",
-            constraints=EnsureStr() | EnsureNone()
-        ),
+            constraints=EnsureStr() | EnsureNone()),
+        force=Parameter(
+            args=("-f", "--force"),
+            doc="""Don't fail on existing siblings. Use and possibly reconfigure them instead.""",
+            action='store_true'),
+
     )
 
     @staticmethod
@@ -89,7 +94,8 @@ class CreateSiblingRia(Interface):
     def __call__(
             sibling,
             dataset=None,
-            storage_sibling=None):
+            storage_sibling=None,
+            force=False):
 
         res_kwargs = dict(
             action="create-sibling-ria",
@@ -113,7 +119,7 @@ class CreateSiblingRia(Interface):
 
         # TODO: messages - this is "create-sibling". Don't confuse existence of local remotes with existence of the
         #       actual remote sibling in wording
-        if sibling in [r['name'] for r in ds.siblings()]:
+        if not force and sibling in [r['name'] for r in ds.siblings()]:
             yield get_status_dict(
                 ds=ds,
                 status='error',
@@ -122,7 +128,7 @@ class CreateSiblingRia(Interface):
             )
             return
 
-        if storage_sibling in [r['name'] for r in ds.siblings()]:
+        if not force and storage_sibling in [r['name'] for r in ds.siblings()]:
             yield get_status_dict(
                 ds=ds,
                 status='error',
@@ -132,7 +138,6 @@ class CreateSiblingRia(Interface):
             return
 
         # check special remote config:
-
         # TODO: consider annexconfig the same way the special remote does (in-dataset special remote config)
         base_path = ds.config.get("annex.ria-remote.{}.base-path".format(storage_sibling), None)
         if not base_path:
@@ -150,6 +155,7 @@ class CreateSiblingRia(Interface):
             lgr.warning("No SSH-Host configured for {}. Assume local RIA store at {}.".format(storage_sibling, base_path))
         if ssh_host == '0':
             ssh_host = None
+        lgr.info("create siblings '{}' and '{}' ...".format(sibling, storage_sibling))
 
         lgr.debug('init special remote {}'.format(storage_sibling))
         cmd = ['git', 'annex',
@@ -161,7 +167,7 @@ class CreateSiblingRia(Interface):
                ]
         result = subprocess.run(cmd, cwd=str(ds.path), stderr=subprocess.PIPE)
         if result.returncode != 0:
-            if result.stderr == b'git-annex: There is already a special remote named "inm7-storage".' \
+            if force and result.stderr == b'git-annex: There is already a special remote named "inm7-storage".' \
                                                        b' (Use enableremote to enable an existing special remote.)\n':
                 # run enableremote instead
                 cmd[2] = 'enableremote'
@@ -191,6 +197,7 @@ class CreateSiblingRia(Interface):
                        cwd=str(ds.path))
 
         # 2. create a bare repository in-store:
+        lgr.debug("init bare repository")
         # TODO: we should prob. check whether it's there already. How?
         # Note: like the special remote itself, we assume local FS if no SSH host is specified
         if ssh_host:
@@ -207,7 +214,7 @@ class CreateSiblingRia(Interface):
         # directory type tree with dirhash lower. This in turn would be an issue, if we want to pack the entire thing
         # into an archive. Special remote will then not be able to access content in the "wrong" place within the
         # archive
-
+        lgr.debug("set up git remote")
         ds.siblings(
             'configure',
             name=sibling,
@@ -223,5 +230,5 @@ class CreateSiblingRia(Interface):
         # Publish to the git remote (without data)
         # This should prevent weird disconnected history situations
         # and give the remote end an idea who's dataset that is
-        lgr.debug("updating sibling {}".format(sibling))
+        lgr.info("updating sibling {}".format(sibling))
         ds.publish(to=sibling, transfer_data='none')

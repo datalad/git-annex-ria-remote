@@ -158,7 +158,8 @@ class CreateSiblingRia(Interface):
             else:
                 yield get_status_dict(
                     status='error',
-                    message="initremote failed.\nstdout: %s\nstderr: %s" % (result.stdout, result.stderr)
+                    message="initremote failed.\nstdout: %s\nstderr: %s" % (result.stdout, result.stderr),
+                    **res_kwargs
                 )
                 return
 

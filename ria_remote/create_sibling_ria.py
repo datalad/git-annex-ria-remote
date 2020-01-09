@@ -57,13 +57,6 @@ class CreateSiblingRia(Interface):
 
     """
 
-# needs (opt) TWO names - git-remote + special remote
-# push initial git-history: optional? Default: YES. (we need a connection anyway)
-
-
-
-
-
     _params_ = dict(
         dataset=Parameter(
             args=("-d", "--dataset"),
@@ -83,9 +76,12 @@ class CreateSiblingRia(Interface):
             constraints=EnsureStr() | EnsureNone()),
         force=Parameter(
             args=("-f", "--force"),
-            doc="""Don't fail on existing siblings. Use and possibly reconfigure them instead.""",
+            doc="""don't fail on existing siblings. Use and possibly reconfigure them instead.""",
             action='store_true'),
-
+        no_publish=Parameter(
+            args=("--no-publish",),
+            doc="""whether to publish the dataset's history (no data) to SIBLING after creation.""",
+            action="store_true"),
     )
 
     @staticmethod
@@ -95,15 +91,16 @@ class CreateSiblingRia(Interface):
             sibling,
             dataset=None,
             storage_sibling=None,
-            force=False):
-
-        res_kwargs = dict(
-            action="create-sibling-ria",
-            logger=lgr,
-        )
+            force=False,
+            no_publish=False):
 
         # TODO: is check_installed actually required?
         ds = require_dataset(dataset, check_installed=True, purpose='create sibling RIA')
+        res_kwargs = dict(
+            ds=ds,
+            action="create-sibling-ria",
+            logger=lgr,
+        )
 
         if ds.repo.get_hexsha() is None or ds.id is None:
             raise RuntimeError(
@@ -121,7 +118,6 @@ class CreateSiblingRia(Interface):
         #       actual remote sibling in wording
         if not force and sibling in [r['name'] for r in ds.siblings()]:
             yield get_status_dict(
-                ds=ds,
                 status='error',
                 message="sibling '{}' already exists.".format(sibling),
                 **res_kwargs,
@@ -130,7 +126,6 @@ class CreateSiblingRia(Interface):
 
         if not force and storage_sibling in [r['name'] for r in ds.siblings()]:
             yield get_status_dict(
-                ds=ds,
                 status='error',
                 message="storage-sibling '{}' already exists.".format(storage_sibling),
                 **res_kwargs,
@@ -142,7 +137,6 @@ class CreateSiblingRia(Interface):
         base_path = ds.config.get("annex.ria-remote.{}.base-path".format(storage_sibling), None)
         if not base_path:
             yield get_status_dict(
-                ds=ds,
                 status='impossible',
                 message="Missing required configuration 'annex.ria-remote.{}.base-path'".format(storage_sibling),
                 **res_kwargs,
@@ -174,7 +168,6 @@ class CreateSiblingRia(Interface):
                 subprocess.run(cmd, cwd=str(dataset.path))
             else:
                 yield get_status_dict(
-                    ds=ds,
                     status='error',
                     message="initremote failed.\nstdout: %s\nstderr: %s" % (result.stdout, result.stderr)
                 )
@@ -226,9 +219,14 @@ class CreateSiblingRia(Interface):
             result_renderer=None)
 
         ds.config.set("remote.{}.annex-ignore".format(sibling), value="true", where="local")
+        yield get_status_dict(
+            status='ok',
+        )
 
-        # Publish to the git remote (without data)
-        # This should prevent weird disconnected history situations
-        # and give the remote end an idea who's dataset that is
-        lgr.info("updating sibling {}".format(sibling))
-        ds.publish(to=sibling, transfer_data='none')
+        if not no_publish:
+            # Publish to the git remote (without data)
+            # This should prevent weird disconnected history situations
+            # and give the remote end an idea who's dataset that is
+            lgr.info("updating sibling {}".format(sibling))
+            yield from ds.publish(to=sibling, transfer_data='none')
+

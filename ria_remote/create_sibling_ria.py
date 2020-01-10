@@ -43,6 +43,13 @@ lgr = logging.getLogger('datalad.ria_remote.create_sibling_ria')
 class CreateSiblingRia(Interface):
     """Creates a sibling to a dataset in a RIA store
 
+    This creates a representation of a dataset in a ria-remote compliant storage location. For access to it two
+    siblings are configured for the dataset. A "regular" one and a storage-sibling (git-annex special remote).
+    Furthermore, the former is configured to have a publication dependency on the latter.
+
+    Note, that the RIA remote needs to be configured before, referring to the name of the storage-sibling.
+    That is, access to it must be available via the 'annex.ria-remote.<STORAGE>.base-path' and optionally
+    'annex.ria-remote.<STORAGE>.ssh-host' configs.
     """
 
     _params_ = dict(
@@ -108,7 +115,7 @@ class CreateSiblingRia(Interface):
         if not force and sibling in [r['name'] for r in ds.siblings()]:
             yield get_status_dict(
                 status='error',
-                message="sibling '{}' already exists.".format(sibling),
+                message="a sibling '{}' is already configured. Use --force to overwrite it.".format(sibling),
                 **res_kwargs,
             )
             return
@@ -116,7 +123,7 @@ class CreateSiblingRia(Interface):
         if not force and storage_sibling in [r['name'] for r in ds.siblings()]:
             yield get_status_dict(
                 status='error',
-                message="storage-sibling '{}' already exists.".format(storage_sibling),
+                message="a storage-sibling '{}' is already configured. Use --force to overwrite it.".format(storage_sibling),
                 **res_kwargs,
             )
             return

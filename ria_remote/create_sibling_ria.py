@@ -14,7 +14,11 @@ __docformat__ = 'restructuredtext'
 import logging
 import subprocess
 from pathlib import Path
+from shlex import quote as sh_quote
 
+from datalad.interface.common_opts import (
+    recursion_flag,
+)
 from datalad.interface.base import (
     Interface,
     build_doc,
@@ -44,12 +48,18 @@ class CreateSiblingRia(Interface):
     """Creates a sibling to a dataset in a RIA store
 
     This creates a representation of a dataset in a ria-remote compliant storage location. For access to it two
-    siblings are configured for the dataset. A "regular" one and a storage-sibling (git-annex special remote).
+    siblings are configured for the dataset by default. A "regular" one and a storage-sibling (git-annex special remote).
     Furthermore, the former is configured to have a publication dependency on the latter.
 
     Note, that the RIA remote needs to be configured before, referring to the name of the storage-sibling.
     That is, access to it must be available via the 'annex.ria-remote.<STORAGE>.base-path' and optionally
-    'annex.ria-remote.<STORAGE>.ssh-host' configs.
+    'annex.ria-remote.<STORAGE>.ssh-host' configs. Please note, that STORAGE is the name of the storage sibling!
+
+    Todo
+    ----
+    Say something about the store setup/layout. What is expected be there?
+
+
     """
 
     _params_ = dict(
@@ -78,6 +88,12 @@ class CreateSiblingRia(Interface):
             args=("--no-publish",),
             doc="""whether to publish the dataset's history (no data) to SIBLING after creation.""",
             action="store_true"),
+        no_server=Parameter(
+            args=("--no-server",),
+            doc="""don't assume the store to be served by a webserver. By default git's update-server-info hook is 
+            enabled. With this option that can be disabled.""",
+            action="store_true"),
+        recursive=recursion_flag,
     )
 
     @staticmethod
@@ -88,7 +104,10 @@ class CreateSiblingRia(Interface):
             dataset=None,
             storage_sibling=None,
             force=False,
-            no_publish=False):
+            no_publish=False,
+            no_server=False,
+            recursive=False,
+    ):
 
         # TODO: is check_installed actually required?
         ds = require_dataset(dataset, check_installed=True, purpose='create sibling RIA')
@@ -170,9 +189,6 @@ class CreateSiblingRia(Interface):
                 )
                 return
 
-        # determine layout locations
-        repo_path, archive_path, objects_path = RIARemote.get_layout_locations(base_path, ds.id)
-
         # 1. create remote object store:
         # Note: All it actually takes is to trigger the special remote's `prepare` method once.
         # ATM trying to achieve that by invoking a minimal fsck.
@@ -187,17 +203,27 @@ class CreateSiblingRia(Interface):
                        cwd=str(ds.path))
 
         # 2. create a bare repository in-store:
+        # determine layout locations
+        repo_path, archive_path, objects_path = RIARemote.get_layout_locations(base_path, ds.id)
+
         lgr.debug("init bare repository")
         # TODO: we should prob. check whether it's there already. How?
         # Note: like the special remote itself, we assume local FS if no SSH host is specified
+        disabled_hook = sh_quote(str(repo_path / '.git' / 'hooks' / 'post-update.sample'))
+        enabled_hook = sh_quote(str(repo_path / '.git' / 'hooks' / 'post-update'))
         if ssh_host:
             from datalad import ssh_manager
             ssh = ssh_manager.get_connection(ssh_host, use_remote_annex_bundle=False)
             ssh.open()
-            ssh('cd {} && git init --bare'.format(repo_path))
+            ssh('cd {} && git init --bare'.format(sh_quote(str(repo_path))))
+            if not no_server:
+                ssh('mv {} {}'.format(disabled_hook, enabled_hook))
         else:
             cmd = ['git', 'init', '--bare']
             subprocess.run(cmd, cwd=str(repo_path), check=True)
+            if not no_server:
+                cmd = ['mv', disabled_hook, enabled_hook]
+                subprocess.run(cmd, cwd=str(repo_path), check=True)
 
         # add a git remote to the bare repository
         # Note: needs annex-ignore! Otherwise we might push into default annex/object tree instead of
@@ -229,3 +255,12 @@ class CreateSiblingRia(Interface):
             lgr.info("updating sibling {}".format(sibling))
             yield from ds.publish(to=sibling, transfer_data='none')
 
+        if recursive:
+            for subds in ds.subdatasets(fulfilled=True, recursive=True):
+                yield from CreateSiblingRia(sibling,
+                                            dataset=subds,
+                                            storage_sibling=storage_sibling,
+                                            force=force,
+                                            no_publish=no_publish,
+                                            no_server=no_server,
+                                            recursive=recursive)

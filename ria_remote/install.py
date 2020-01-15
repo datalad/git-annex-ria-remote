@@ -135,10 +135,3 @@ class Install(Clone):
         if reckless:
             proc_args.append('reckless')
         target_ds.run_procedure(proc_args)
-
-        #
-        # TODO configure dataset to run this procedure after
-        # every get/install of a subdataset
-        # TODO enhance datalad to trigger it whenever it seen
-        # an action:install;status:ok result
-        #

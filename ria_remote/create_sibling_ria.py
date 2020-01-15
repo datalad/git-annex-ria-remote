@@ -112,7 +112,7 @@ class CreateSiblingRia(Interface):
 
         # TODO: messages - this is "create-sibling". Don't confuse existence of local remotes with existence of the
         #       actual remote sibling in wording
-        if not force and sibling in [r['name'] for r in ds.siblings()]:
+        if not force and sibling in [r['name'] for r in ds.siblings(result_renderer=None)]:
             yield get_status_dict(
                 status='error',
                 message="a sibling '{}' is already configured. Use --force to overwrite it.".format(sibling),
@@ -120,7 +120,7 @@ class CreateSiblingRia(Interface):
             )
             return
 
-        if not force and storage_sibling in [r['name'] for r in ds.siblings()]:
+        if not force and storage_sibling in [r['name'] for r in ds.siblings(result_renderer=None)]:
             yield get_status_dict(
                 status='error',
                 message="a storage-sibling '{}' is already configured. Use --force to overwrite it.".format(storage_sibling),

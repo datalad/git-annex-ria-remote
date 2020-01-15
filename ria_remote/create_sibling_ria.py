@@ -205,10 +205,11 @@ class CreateSiblingRia(Interface):
         # into an archive. Special remote will then not be able to access content in the "wrong" place within the
         # archive
         lgr.debug("set up git remote")
+        # TODO: This results in "[WARNING] Failed to determine if datastore carries annex.":
         ds.siblings(
             'configure',
             name=sibling,
-            url='ssh://{}{}'.format(ssh_host, str(repo_path))
+            url='{}:{}'.format(ssh_host, str(repo_path))
             if ssh_host
             else str(repo_path),
             recursive=False,

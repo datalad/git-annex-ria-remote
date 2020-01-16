@@ -20,6 +20,10 @@ from datalad.tests.utils import (
 
 from datalad import cfg
 
+from ria_remote.tests.utils import (
+    skip_ssh,
+)
+
 
 @with_tempfile
 def test_invalid_calls(path):
@@ -43,12 +47,12 @@ def test_invalid_calls(path):
             'sub': {'other.txt': 'other'}})
 @with_tempfile
 @with_tempfile(mkdir=True)
-def test_create_local(ds_path, base_path, clone_path):
+def _test_create_store(host, ds_path, base_path, clone_path):
 
     # TODO: This is an issue. We are writing to ~/.gitconfig here. Override doesn't work, since RIARemote itself
     #       (actually git-annex!) doesn't have access to it, so initremote will still fail.
     cfg.set("annex.ria-remote.datastore-storage.base-path", base_path, where='global', reload=True)
-    cfg.set("annex.ria-remote.datastore-storage.ssh-host", "0", where='global', reload=True)
+    cfg.set("annex.ria-remote.datastore-storage.ssh-host", host, where='global', reload=True)
 
     ds = Dataset(ds_path).create(force=True)
     subds = ds.create('sub', force=True)
@@ -66,6 +70,8 @@ def test_create_local(ds_path, base_path, clone_path):
     eq_({'datastore', 'datastore-storage', 'here'}, {s['name'] for s in siblings})
     sub_siblings = subds.siblings(result_renderer=None)
     eq_({'here'}, {s['name'] for s in sub_siblings})
+
+    # TODO: post-update hook was enabled
 
     # implicit test of success by ria-installing from store:
     ds.publish(to="datastore", transfer_data='all')
@@ -95,10 +101,13 @@ def test_create_local(ds_path, base_path, clone_path):
     cfg.unset("annex.ria-remote.datastore-storage.base-path", where='global', reload=True)
     cfg.unset("annex.ria-remote.datastore-storage.ssh-host", where='global', reload=True)
 
-# TODO: Same thing via SSH
+
+def test_create_simple():
+
+    yield _test_create_store, '0'
+    yield skip_ssh(_test_create_store), 'datalad-test'
+
 
 # TODO: explicit naming of special remote
-
-# TODO: Reconfigure/reuse existing (special-)remote via --force
-
 # TODO: Don't publish git history via --no-publish
+# TODO: --no-server switch

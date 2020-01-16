@@ -55,11 +55,38 @@ class CreateSiblingRia(Interface):
     That is, access to it must be available via the 'annex.ria-remote.<STORAGE>.base-path' and optionally
     'annex.ria-remote.<STORAGE>.ssh-host' configs. Please note, that STORAGE is the name of the storage sibling!
 
+    The store's base path currently is expected to either:
+      - not yet exist or
+      - be empty or
+      - have a valid `ria-layout-version` file and an `error_logs` directory.
+    In the first two cases, said file and directory are created by this command. Alternatively you can manually create
+    the third case, of course. Please note, that `ria-layout-version` needs to contain a line stating the version
+    (currently '1') and optionally enable error logging (append '|l' in that case). Currently, this line MUST end with a
+    newline!
+
+    Error logging will create files in the `error_log` directory whenever the RIA special remote (storage sibling)
+    raises an exception, storing the python traceback of it. The logfiles are named according to the scheme
+    <dataset id>.<annex uuid of the remote>.log showing 'who' ran into this issue with what dataset. Since this logging
+    can potentially leak personal data (like local file paths for example) it can be disabled from the client side via
+    `annex.ria-remote.<STORAGE>.ignore-remote-config`.
+
     Todo
     ----
-    Say something about the store setup/layout. What is expected be there?
+    Where to put the description of a RIA store (see below)?
 
-
+    The targeted layout of such a store is a tree of datasets, starting at the configured base path. First level of
+    subdirectories are named for the first three characters of the datasets' id, second level is the remainder of those
+    ids. The thereby created dataset directories contain a bare git repository.
+    Those bare repositories are slightly different from plain git-annex bare repositories in that they use the standard
+    dirhashmixed layout beneath annex/objects as opposed to dirhashlower, which is git-annex's default for bare
+    repositories. Furthermore, there is an additional directory 'archives' within the dataset directories, which may or
+    may not contain archives with annexed content.
+    Note, that this helps to reduce the number of inodes consumed (no checkout + potential archive) as well as it allows
+    to resolve dependencies (that is (sub)datasets) merely by their id.
+    Finally, there is a file `ria-layout-version` put beneath the store's base path, determining the version of the
+    dataset tree layout and a file of the same name per each dataset directory determining object tree layout version
+    (we already switch from dirhashlower to dirhashmixed for example) and an additional directory `error_logs` at the
+    toplevel.
     """
 
     # TODO: option to skip existing remotes in case of recursive?

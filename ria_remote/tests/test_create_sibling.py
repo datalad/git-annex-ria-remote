@@ -39,7 +39,8 @@ def test_invalid_calls(path):
                         message="Missing required configuration 'annex.ria-remote.some-storage.base-path'")
 
 
-@with_tree({'ds': {'file1.txt': 'some'}})
+@with_tree({'ds': {'file1.txt': 'some'},
+            'sub': {'other.txt': 'other'}})
 @with_tempfile
 @with_tempfile(mkdir=True)
 def test_create_local(ds_path, base_path, clone_path):
@@ -50,7 +51,8 @@ def test_create_local(ds_path, base_path, clone_path):
     cfg.set("annex.ria-remote.datastore-storage.ssh-host", "0", where='global', reload=True)
 
     ds = Dataset(ds_path).create(force=True)
-    ds.save()
+    subds = ds.create('sub', force=True)
+    ds.save(recursive=True)
     assert_repo_status(ds.path)
 
     # don't specify special remote. By default should be git-remote + "-storage", which is what we configured
@@ -58,6 +60,12 @@ def test_create_local(ds_path, base_path, clone_path):
     assert_result_count(res, 1, status='ok', action='create-sibling-ria')
     assert_result_count(res, 1, status='ok', action='publish')
     eq_(len(res), 2)
+
+    # remotes exist, but only in super
+    siblings = ds.siblings(result_renderer=None)
+    eq_({'datastore', 'datastore-storage', 'here'}, {s['name'] for s in siblings})
+    sub_siblings = subds.siblings(result_renderer=None)
+    eq_({'here'}, {s['name'] for s in sub_siblings})
 
     # implicit test of success by ria-installing from store:
     ds.publish(to="datastore", transfer_data='all')
@@ -71,6 +79,18 @@ def test_create_local(ds_path, base_path, clone_path):
         assert_result_count(installed_ds.get(op.join('ds', 'file1.txt')),
                             1,
                             status='ok', action='get', path=op.join(installed_ds.path, 'ds', 'file1.txt'))
+
+    # now, again but recursive. force should deal with existing remotes in super
+    res = ds.create_sibling_ria("datastore", recursive=True, force=True)
+    eq_(len(res), 4)
+    assert_result_count(res, 2, status='ok', action="publish")
+    assert_result_count(res, 2, status='ok', action="create-sibling-ria")
+
+    # remotes now exist in super and sub
+    siblings = ds.siblings(result_renderer=None)
+    eq_({'datastore', 'datastore-storage', 'here'}, {s['name'] for s in siblings})
+    sub_siblings = subds.siblings(result_renderer=None)
+    eq_({'datastore', 'datastore-storage', 'here'}, {s['name'] for s in sub_siblings})
 
     cfg.unset("annex.ria-remote.datastore-storage.base-path", where='global', reload=True)
     cfg.unset("annex.ria-remote.datastore-storage.ssh-host", where='global', reload=True)

@@ -209,8 +209,9 @@ class CreateSiblingRia(Interface):
         lgr.debug("init bare repository")
         # TODO: we should prob. check whether it's there already. How?
         # Note: like the special remote itself, we assume local FS if no SSH host is specified
-        disabled_hook = sh_quote(str(repo_path / '.git' / 'hooks' / 'post-update.sample'))
-        enabled_hook = sh_quote(str(repo_path / '.git' / 'hooks' / 'post-update'))
+        disabled_hook = sh_quote(str(repo_path / 'hooks' / 'post-update.sample'))
+        enabled_hook = sh_quote(str(repo_path / 'hooks' / 'post-update'))
+
         if ssh_host:
             from datalad import ssh_manager
             ssh = ssh_manager.get_connection(ssh_host, use_remote_annex_bundle=False)

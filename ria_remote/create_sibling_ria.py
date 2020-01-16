@@ -62,6 +62,8 @@ class CreateSiblingRia(Interface):
 
     """
 
+    # TODO: option to skip existing remotes in case of recursive?
+
     _params_ = dict(
         dataset=Parameter(
             args=("-d", "--dataset"),
@@ -176,8 +178,7 @@ class CreateSiblingRia(Interface):
                ]
         result = subprocess.run(cmd, cwd=str(ds.path), stderr=subprocess.PIPE)
         if result.returncode != 0:
-            if force and result.stderr == b'git-annex: There is already a special remote named "inm7-storage".' \
-                                                       b' (Use enableremote to enable an existing special remote.)\n':
+            if force and result.stderr.startswith(b'git-annex: There is already a special remote named'):
                 # run enableremote instead
                 cmd[2] = 'enableremote'
                 subprocess.run(cmd, cwd=str(ds.path))
@@ -257,11 +258,11 @@ class CreateSiblingRia(Interface):
             yield from ds.publish(to=sibling, transfer_data='none')
 
         if recursive:
-            for subds in ds.subdatasets(fulfilled=True, recursive=True):
-                yield from CreateSiblingRia(sibling,
-                                            dataset=subds,
-                                            storage_sibling=storage_sibling,
-                                            force=force,
-                                            no_publish=no_publish,
-                                            no_server=no_server,
-                                            recursive=recursive)
+            for subds in ds.subdatasets(fulfilled=True, recursive=True, result_xfm='datasets'):
+                yield from CreateSiblingRia.__call__(sibling,
+                                                     dataset=subds,
+                                                     storage_sibling=storage_sibling,
+                                                     force=force,
+                                                     no_publish=no_publish,
+                                                     no_server=no_server,
+                                                     recursive=recursive)

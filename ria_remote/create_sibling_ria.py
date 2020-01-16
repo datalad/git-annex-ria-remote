@@ -258,6 +258,8 @@ class CreateSiblingRia(Interface):
             yield from ds.publish(to=sibling, transfer_data='none')
 
         if recursive:
+            # Note: subdatasets can be treated independently, so go full recursion when querying for them and _no_
+            # recursion with the actual call. Theoretically this can be parallelized.
             for subds in ds.subdatasets(fulfilled=True, recursive=True, result_xfm='datasets'):
                 yield from CreateSiblingRia.__call__(sibling,
                                                      dataset=subds,
@@ -265,4 +267,4 @@ class CreateSiblingRia(Interface):
                                                      force=force,
                                                      no_publish=no_publish,
                                                      no_server=no_server,
-                                                     recursive=recursive)
+                                                     recursive=False)

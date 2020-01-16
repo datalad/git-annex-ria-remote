@@ -1,2 +1,3 @@
 include versioneer.py
 include ria_remote/_version.py
+recursive-include ria_remote/resources *

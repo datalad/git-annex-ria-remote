@@ -260,7 +260,10 @@ class CreateSiblingRia(Interface):
         # into an archive. Special remote will then not be able to access content in the "wrong" place within the
         # archive
         lgr.debug("set up git remote")
-        # TODO: This results in "[WARNING] Failed to determine if datastore carries annex.":
+        # TODO: - This results in "[WARNING] Failed to determine if datastore carries annex."
+        #         (see https://github.com/datalad/datalad/issues/4028)
+        #       - additionally there's https://github.com/datalad/datalad/issues/3989, where datalad-siblings might
+        #         hang forever
         ds.siblings(
             'configure',
             name=sibling,

@@ -62,8 +62,8 @@ class CreateSiblingRia(Interface):
     Furthermore, the former is configured to have a publication dependency on the latter.
 
     Note, that the RIA remote needs to be configured before, referring to the name of the storage-sibling.
-    That is, access to it must be available via the 'annex.ria-remote.<STORAGE>.base-path' and optionally
-    'annex.ria-remote.<STORAGE>.ssh-host' configs. Please note, that STORAGE is the name of the storage sibling!
+    That is, access to it must be available via the 'annex.ria-remote.<RIASIBLING>.base-path' and optionally
+    'annex.ria-remote.<RIASIBLING>.ssh-host' configs. Please note, that RIASIBLING is the name of the storage sibling!
 
     The store's base path currently is expected to either:
       - not yet exist or
@@ -78,7 +78,7 @@ class CreateSiblingRia(Interface):
     raises an exception, storing the python traceback of it. The logfiles are named according to the scheme
     <dataset id>.<annex uuid of the remote>.log showing 'who' ran into this issue with what dataset. Since this logging
     can potentially leak personal data (like local file paths for example) it can be disabled from the client side via
-    `annex.ria-remote.<STORAGE>.ignore-remote-config`.
+    `annex.ria-remote.<RIASIBLING>.ignore-remote-config`.
 
     Todo
     ----
@@ -108,16 +108,19 @@ class CreateSiblingRia(Interface):
             no dataset is given, an attempt is made to identify the dataset
             based on the current working directory""",
             constraints=EnsureDataset() | EnsureNone()),
-        sibling=Parameter(
-            args=("sibling",),
-            metavar="SIBLING",
-            doc="""name of the to be created sibling""",
+        name=Parameter(
+            args=('-s', '--name',),
+            metavar='NAME',
+            doc="""sibling name to create for this publication target.
+                If `recursive` is set, the same name will be used to label all
+                the subdatasets' siblings. When creating a target dataset fails,
+                no sibling is added""",
             constraints=EnsureStr() | EnsureNone()),
-        storage_sibling=Parameter(
-            args=("-s", "--storage-sibling"),
-            metavar="STORAGE",
-            doc="""name of the RIA storage sibling. Must not be identical to SIBLING. By default SIBLING is appended 
-            with '-storage'""",
+        ria_sibling=Parameter(
+            args=("--ria-sibling",),
+            metavar="RIASIBLING",
+            doc="""name of the RIA storage sibling (git-annex special remote). Must not be identical to NAME. 
+            By default NAME is appended with '-storage'""",
             constraints=EnsureStr() | EnsureNone()),
         force=Parameter(
             args=("-f", "--force"),
@@ -134,15 +137,14 @@ class CreateSiblingRia(Interface):
     @staticmethod
     @datasetmethod(name='create_sibling_ria')
     @eval_results
-    def __call__(
-            sibling,
-            dataset=None,
-            storage_sibling=None,
-            force=False,
-            post_update_hook=False,
-            recursive=False,
-            recursion_limit=None
-    ):
+    def __call__(name,
+                 dataset=None,
+                 ria_sibling=None,
+                 force=False,
+                 post_update_hook=False,
+                 recursive=False,
+                 recursion_limit=None
+                 ):
 
         # TODO: is check_installed actually required?
         ds = require_dataset(dataset, check_installed=True, purpose='create sibling RIA')
@@ -157,58 +159,58 @@ class CreateSiblingRia(Interface):
                 "Repository at {} is not a DataLad dataset, "
                 "run 'datalad create' first.".format(ds.path))
 
-        if not storage_sibling:
-            storage_sibling = "{}-storage".format(sibling)
+        if not ria_sibling:
+            ria_sibling = "{}-storage".format(name)
 
-        if sibling == storage_sibling:
+        if name == ria_sibling:
             # leads to unresolvable, circular dependency with publish-depends
             raise ValueError("sibling names must not be equal")
 
         # TODO: messages - this is "create-sibling". Don't confuse existence of local remotes with existence of the
         #       actual remote sibling in wording
         ds_siblings = [r['name'] for r in ds.siblings(result_renderer=None)]
-        if not force and sibling in ds_siblings:
+        if not force and name in ds_siblings:
             yield get_status_dict(
                 status='error',
-                message="a sibling '{}' is already configured. Use --force to overwrite it.".format(sibling),
+                message="a sibling '{}' is already configured. Use --force to overwrite it.".format(name),
                 **res_kwargs,
             )
             return
 
-        if not force and storage_sibling in ds_siblings:
+        if not force and ria_sibling in ds_siblings:
             yield get_status_dict(
                 status='error',
-                message="a storage-sibling '{}' is already configured. Use --force to overwrite it.".format(storage_sibling),
+                message="a storage-sibling '{}' is already configured. Use --force to overwrite it.".format(ria_sibling),
                 **res_kwargs,
             )
             return
 
         # check special remote config:
         # TODO: consider annexconfig the same way the special remote does (in-dataset special remote config)
-        base_path = ds.config.get("annex.ria-remote.{}.base-path".format(storage_sibling), None)
+        base_path = ds.config.get("annex.ria-remote.{}.base-path".format(ria_sibling), None)
         if not base_path:
             yield get_status_dict(
                 status='impossible',
-                message="Missing required configuration 'annex.ria-remote.{}.base-path'".format(storage_sibling),
+                message="Missing required configuration 'annex.ria-remote.{}.base-path'".format(ria_sibling),
                 **res_kwargs,
             )
             return
 
         base_path = Path(base_path)
-        ssh_host = ds.config.get("annex.ria-remote.{}.ssh-host".format(storage_sibling), None)
+        ssh_host = ds.config.get("annex.ria-remote.{}.ssh-host".format(ria_sibling), None)
         if not ssh_host:
-            lgr.warning("No SSH-Host configured for {}. Assume local RIA store at {}.".format(storage_sibling, base_path))
+            lgr.warning("No SSH-Host configured for {}. Assume local RIA store at {}.".format(ria_sibling, base_path))
         if ssh_host == '0':
             ssh_host = None
-        lgr.info("create siblings '{}' and '{}' ...".format(sibling, storage_sibling))
+        lgr.info("create siblings '{}' and '{}' ...".format(name, ria_sibling))
 
-        lgr.debug('init special remote {}'.format(storage_sibling))
+        lgr.debug('init special remote {}'.format(ria_sibling))
         ria_remote_options = ['type=external',
                               'externaltype=ria',
                               'encryption=none',
                               'autoenable=true']
         try:
-            ds.repo.init_remote(storage_sibling, options=ria_remote_options)
+            ds.repo.init_remote(ria_sibling, options=ria_remote_options)
         except CommandError as e:
             if force and e.stderr.startswith(b'git-annex: There is already a special remote named'):
                 # run enableremote instead
@@ -233,7 +235,7 @@ class CreateSiblingRia(Interface):
         #       - this leads to the third option: Have that creation routine importable and callable from
         #         ria-remote package without the need to actually instantiate a RIARemote object
         lgr.debug("initializing object store")
-        ds.repo.fsck(remote=storage_sibling, fast=True, annex_options=['--exclude=*/*'])
+        ds.repo.fsck(remote=ria_sibling, fast=True, annex_options=['--exclude=*/*'])
 
         # 2. create a bare repository in-store:
         # determine layout locations
@@ -269,16 +271,16 @@ class CreateSiblingRia(Interface):
         #         => for now have annex-ignore configured before. Evtl. Allow configure/add to include that option
         #       - additionally there's https://github.com/datalad/datalad/issues/3989, where datalad-siblings might
         #         hang forever
-        ds.config.set("remote.{}.annex-ignore".format(sibling), value="true", where="local")
+        ds.config.set("remote.{}.annex-ignore".format(name), value="true", where="local")
         # TODO: call siblings with fetch=False?
         ds.siblings(
             'configure',
-            name=sibling,
+            name=name,
             url='{}:{}'.format(ssh_host, str(repo_path))
             if ssh_host
             else str(repo_path),
             recursive=False,
-            publish_depends=storage_sibling,
+            publish_depends=ria_sibling,
             result_renderer=None)
 
         yield get_status_dict(
@@ -293,10 +295,9 @@ class CreateSiblingRia(Interface):
                                         recursive=True,
                                         recursion_limit=recursion_limit,
                                         result_xfm='datasets'):
-                yield from CreateSiblingRia.__call__(sibling,
+                yield from CreateSiblingRia.__call__(name,
                                                      dataset=subds,
-                                                     storage_sibling=storage_sibling,
+                                                     ria_sibling=ria_sibling,
                                                      force=force,
-                                                     no_publish=no_publish,
-                                                     no_server=no_server,
+                                                     post_update_hook=post_update_hook,
                                                      recursive=False)

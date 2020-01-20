@@ -80,7 +80,7 @@ def _test_create_store(host, ds_path, base_path, clone_path):
     ds.publish(to="datastore", transfer_data='all')
     with chpwd(clone_path):
         if host:
-            clone('ria+ssh://datastore-ria#{}'.format(ds.id), path='test_install')
+            clone('ria+ssh://{}{}#{}'.format(host, base_path, ds.id), path='test_install')
         else:
             # TODO: Whenever ria+file supports special remote config (label), change here:
             clone('ria+file://{}#{}'.format(base_path, ds.id), path='test_install')

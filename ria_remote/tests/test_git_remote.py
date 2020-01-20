@@ -79,10 +79,18 @@ def test_bare_git(origin, remote_base_path):
     eq_(len(ds.repo.whereis('one.txt')), 2)
 
     # But after fsck it does:
-    assert_result_count([annexjson2result(r, ds) for r in ds.repo.fsck(remote='riaremote', fast=True)],
-                        2,
+    fsck_res = [annexjson2result(r, ds) for r in ds.repo.fsck(remote='riaremote', fast=True)]
+    assert_result_count(fsck_res,
+                        1,
                         status='error',
-                        message='fixing location log')
+                        message='** Based on the location log, one.txt\n** was expected to be present, '
+                                'but its content is missing.')
+    assert_result_count(fsck_res,
+                        1,
+                        status='error',
+                        message='** Based on the location log, subdir/two\n** was expected to be present, '
+                                'but its content is missing.')
+
     eq_(len(ds.repo.whereis('one.txt')), 1)
 
 

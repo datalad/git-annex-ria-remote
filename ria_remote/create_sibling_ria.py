@@ -14,7 +14,6 @@ __docformat__ = 'restructuredtext'
 import logging
 import subprocess
 from pathlib import Path
-from shlex import quote as sh_quote
 
 from datalad.interface.common_opts import (
     recursion_flag,
@@ -36,6 +35,10 @@ from datalad.distribution.dataset import (
     EnsureDataset,
     datasetmethod,
     require_dataset,
+)
+
+from datalad.utils import (
+    quote_cmdlinearg
 )
 
 from ria_remote.remote import RIARemote
@@ -237,14 +240,14 @@ class CreateSiblingRia(Interface):
         lgr.debug("init bare repository")
         # TODO: we should prob. check whether it's there already. How?
         # Note: like the special remote itself, we assume local FS if no SSH host is specified
-        disabled_hook = sh_quote(str(repo_path / 'hooks' / 'post-update.sample'))
-        enabled_hook = sh_quote(str(repo_path / 'hooks' / 'post-update'))
+        disabled_hook = quote_cmdlinearg(str(repo_path / 'hooks' / 'post-update.sample'))
+        enabled_hook = quote_cmdlinearg(str(repo_path / 'hooks' / 'post-update'))
 
         if ssh_host:
             from datalad import ssh_manager
             ssh = ssh_manager.get_connection(ssh_host, use_remote_annex_bundle=False)
             ssh.open()
-            ssh('cd {} && git init --bare'.format(sh_quote(str(repo_path))))
+            ssh('cd {} && git init --bare'.format(quote_cmdlinearg(str(repo_path))))
             if not no_server:
                 ssh('mv {} {}'.format(disabled_hook, enabled_hook))
         else:

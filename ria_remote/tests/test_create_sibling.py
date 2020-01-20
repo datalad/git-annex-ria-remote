@@ -34,10 +34,10 @@ def test_invalid_calls(path):
     assert_raises(TypeError, ds.create_sibling_ria)
 
     # same name for git- and special remote:
-    assert_raises(ValueError, ds.create_sibling_ria, 'some', ria_sibling='some')
+    assert_raises(ValueError, ds.create_sibling_ria, 'ria+file:///some/where', name='some', ria_sibling='some')
 
     # special remote not configured:
-    res = ds.create_sibling_ria('some', return_type='list', on_failure="ignore")
+    res = ds.create_sibling_ria('ria+file:///some/where', name='some', return_type='list', on_failure="ignore")
     assert_result_count(res, 1,
                         status='impossible',
                         message="Missing required configuration 'annex.ria-remote.some-ria.base-path'")
@@ -61,7 +61,10 @@ def _test_create_store(host, ds_path, base_path, clone_path):
     assert_repo_status(ds.path)
 
     # don't specify special remote. By default should be git-remote + "-storage", which is what we configured
-    res = ds.create_sibling_ria("datastore")
+    res = ds.create_sibling_ria("ria+{prot}://{host}{base}".format(prot='ssh' if host else 'file',
+                                                                   host=host if host else '',
+                                                                   base=base_path),
+                                "datastore")
     assert_result_count(res, 1, status='ok', action='create-sibling-ria')
     eq_(len(res), 1)
 
@@ -81,9 +84,6 @@ def _test_create_store(host, ds_path, base_path, clone_path):
         else:
             # TODO: Whenever ria+file supports special remote config (label), change here:
             clone('ria+file://{}#{}'.format(base_path, ds.id), path='test_install')
-
-
-
         installed_ds = Dataset(op.join(clone_path, 'test_install'))
         assert installed_ds.is_installed()
         assert_repo_status(installed_ds.repo)
@@ -94,7 +94,12 @@ def _test_create_store(host, ds_path, base_path, clone_path):
                             status='ok', action='get', path=op.join(installed_ds.path, 'ds', 'file1.txt'))
 
     # now, again but recursive. force should deal with existing remotes in super
-    res = ds.create_sibling_ria("datastore", recursive=True, force=True)
+    res = ds.create_sibling_ria("ria+{prot}://{host}{base}".format(prot='ssh' if host else 'file',
+                                                                   host=host if host else '',
+                                                                   base=base_path),
+                                "datastore",
+                                recursive=True,
+                                force=True)
     eq_(len(res), 2)
     assert_result_count(res, 2, status='ok', action="create-sibling-ria")
 

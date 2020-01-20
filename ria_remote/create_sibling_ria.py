@@ -38,16 +38,20 @@ from datalad.distribution.dataset import (
     datasetmethod,
     require_dataset,
 )
-
 from datalad.utils import (
     quote_cmdlinearg
 )
-
 from datalad.support.exceptions import (
     CommandError
 )
+from datalad.support.network import (
+    RI
+)
 from datalad.support.gitrepo import (
     GitRepo
+)
+from datalad.core.distributed.clone import (
+    decode_source_spec
 )
 from ria_remote.remote import RIARemote
 
@@ -109,6 +113,11 @@ class CreateSiblingRia(Interface):
             no dataset is given, an attempt is made to identify the dataset
             based on the current working directory""",
             constraints=EnsureDataset() | EnsureNone()),
+        url=Parameter(
+            args=("url",),
+            metavar="URL",
+            doc="""""",
+            constraints=EnsureStr() | EnsureNone()),
         name=Parameter(
             args=('-s', '--name',),
             metavar='NAME',
@@ -154,7 +163,8 @@ class CreateSiblingRia(Interface):
     @staticmethod
     @datasetmethod(name='create_sibling_ria')
     @eval_results
-    def __call__(name,
+    def __call__(url,
+                 name,
                  dataset=None,
                  ria_sibling=None,
                  force=False,
@@ -204,10 +214,22 @@ class CreateSiblingRia(Interface):
             )
             return
 
+        # parse target URL
+        # Note: For python API we should be able to deal with RI and its subclasses. However, currently quite a dance
+        # needed (see below)
+        src_url_ri = RI(url) if not isinstance(url, RI) else url
+        if src_url_ri.fragment:
+            # TODO: This is still somewhat fragile. If the given dataset id in fragment matches, it's actually fine.
+            #       But then: What if additional things are given (like @somebranch)?
+            #       However, ideally we expect no fragment at all.
+            lgr.warning("Ignoring unexpected URL fragment '%s'." % src_url_ri.fragment)
+
         # check special remote config:
-        # TODO: consider annexconfig the same way the special remote does (in-dataset special remote config)
-        base_path = ds.config.get("annex.ria-remote.{}.base-path".format(ria_sibling), None)
-        if not base_path:
+        base_path = src_url_ri.path
+        #if not base_path:
+        #    # TODO: consider annexconfig the same way the special remote does (in-dataset special remote config)
+        #    base_path = ds.config.get("annex.ria-remote.{}.base-path".format(ria_sibling), None)
+        if not ds.config.get("annex.ria-remote.{}.base-path".format(ria_sibling), None):
             yield get_status_dict(
                 status='impossible',
                 message="Missing required configuration 'annex.ria-remote.{}.base-path'".format(ria_sibling),
@@ -216,9 +238,24 @@ class CreateSiblingRia(Interface):
             return
 
         base_path = Path(base_path)
-        ssh_host = ds.config.get("annex.ria-remote.{}.ssh-host".format(ria_sibling), None)
+
+        # append dataset id to url and use magic from clone-helper:
+        # TODO: This dance in URL parsing should be centralized in datalad-core
+        src_url_ri.fragment = ds.id
+        # Note: Attention, decode_source_spec changes the passed RI. That's why we read base_path before
+        # (as the RI's .path will be appended by the actual repo path afterwards):
+        target_props = decode_source_spec(src_url_ri, cfg=ds.config)
+        if target_props['type'] != 'ria':
+            raise ValueError("Not a valid RIA URL: %s. Expected: 'ria+[http|ssh|file|...]://[base-path]'")
+        # TODO: What sanity checks do we need?
+        #       - ria+ scheme really required? If not, ds.id in fragment doesn't do anything. Can still be valid? How
+        #         then to distinguish base-path from repo-path?
+
+        ssh_host = src_url_ri.hostname
+        #if not ssh_host:
+        #    ssh_host = ds.config.get("annex.ria-remote.{}.ssh-host".format(ria_sibling), None)
         if not ssh_host:
-            lgr.warning("No SSH-Host configured for {}. Assume local RIA store at {}.".format(ria_sibling, base_path))
+            lgr.info("No SSH-Host configured for {}. Assume local RIA store at {}.".format(ria_sibling, base_path))
         if ssh_host == '0':
             ssh_host = None
         lgr.info("create siblings '{}' and '{}' ...".format(name, ria_sibling))
@@ -258,6 +295,8 @@ class CreateSiblingRia(Interface):
 
         # 2. create a bare repository in-store:
         # determine layout locations
+        # TODO: This is here for repo_path only. Actually included in target_props['giturl'], but not easily
+        #       accessible.
         repo_path, archive_path, objects_path = RIARemote.get_layout_locations(base_path, ds.id)
 
         lgr.debug("init bare repository")
@@ -305,16 +344,17 @@ class CreateSiblingRia(Interface):
         #       - additionally there's https://github.com/datalad/datalad/issues/3989, where datalad-siblings might
         #         hang forever
         ds.config.set("remote.{}.annex-ignore".format(name), value="true", where="local")
-        # TODO: call siblings with fetch=False?
         ds.siblings(
             'configure',
             name=name,
-            url='{}:{}'.format(ssh_host, str(repo_path))
+            url=target_props['giturl']
             if ssh_host
             else str(repo_path),
             recursive=False,
             publish_depends=ria_sibling,
-            result_renderer=None)
+            result_renderer=None,
+            fetch=False
+        )
 
         yield get_status_dict(
             status='ok',
@@ -328,7 +368,8 @@ class CreateSiblingRia(Interface):
                                         recursive=True,
                                         recursion_limit=recursion_limit,
                                         result_xfm='datasets'):
-                yield from CreateSiblingRia.__call__(name,
+                yield from CreateSiblingRia.__call__(url=url,
+                                                     name=name,
                                                      dataset=subds,
                                                      ria_sibling=ria_sibling,
                                                      force=force,

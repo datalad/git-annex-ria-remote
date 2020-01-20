@@ -17,6 +17,7 @@ from pathlib import Path
 
 from datalad.interface.common_opts import (
     recursion_flag,
+    recursion_limit
 )
 from datalad.interface.base import (
     Interface,
@@ -126,6 +127,7 @@ class CreateSiblingRia(Interface):
             enabled. With this option that can be disabled.""",
             action="store_true"),
         recursive=recursion_flag,
+        recursion_limit=recursion_limit,
     )
 
     @staticmethod
@@ -139,6 +141,7 @@ class CreateSiblingRia(Interface):
             no_publish=False,
             no_server=False,
             recursive=False,
+            recursion_limit=None
     ):
 
         # TODO: is check_installed actually required?
@@ -296,7 +299,10 @@ class CreateSiblingRia(Interface):
         if recursive:
             # Note: subdatasets can be treated independently, so go full recursion when querying for them and _no_
             # recursion with the actual call. Theoretically this can be parallelized.
-            for subds in ds.subdatasets(fulfilled=True, recursive=True, result_xfm='datasets'):
+            for subds in ds.subdatasets(fulfilled=True,
+                                        recursive=True,
+                                        recursion_limit=recursion_limit,
+                                        result_xfm='datasets'):
                 yield from CreateSiblingRia.__call__(sibling,
                                                      dataset=subds,
                                                      storage_sibling=storage_sibling,

@@ -40,7 +40,7 @@ def test_invalid_calls(path):
     res = ds.create_sibling_ria('some', return_type='list', on_failure="ignore")
     assert_result_count(res, 1,
                         status='impossible',
-                        message="Missing required configuration 'annex.ria-remote.some-storage.base-path'")
+                        message="Missing required configuration 'annex.ria-remote.some-ria.base-path'")
 
 
 @with_tree({'ds': {'file1.txt': 'some'},
@@ -52,8 +52,8 @@ def _test_create_store(host, ds_path, base_path, clone_path):
     # TODO: This is an issue. We are writing to ~/.gitconfig here. Override doesn't work, since RIARemote itself
     #       (actually git-annex!) doesn't have access to it, so initremote will still fail.
     #       => at least move cfg.set/unset into a decorator, so it doesn't remain when a test is failing.
-    cfg.set("annex.ria-remote.datastore-storage.base-path", base_path, where='global', reload=True)
-    cfg.set("annex.ria-remote.datastore-storage.ssh-host", host, where='global', reload=True)
+    cfg.set("annex.ria-remote.datastore-ria.base-path", base_path, where='global', reload=True)
+    cfg.set("annex.ria-remote.datastore-ria.ssh-host", host, where='global', reload=True)
 
     ds = Dataset(ds_path).create(force=True)
     subds = ds.create('sub', force=True)
@@ -68,7 +68,7 @@ def _test_create_store(host, ds_path, base_path, clone_path):
 
     # remotes exist, but only in super
     siblings = ds.siblings(result_renderer=None)
-    eq_({'datastore', 'datastore-storage', 'here'}, {s['name'] for s in siblings})
+    eq_({'datastore', 'datastore-ria', 'here'}, {s['name'] for s in siblings})
     sub_siblings = subds.siblings(result_renderer=None)
     eq_({'here'}, {s['name'] for s in sub_siblings})
 
@@ -77,7 +77,7 @@ def _test_create_store(host, ds_path, base_path, clone_path):
     # implicit test of success by ria-installing from store:
     ds.publish(to="datastore", transfer_data='all')
     with chpwd(clone_path):
-        ria_install('datastore-storage:{}'.format(ds.id), path='test_install')
+        ria_install('datastore-ria:{}'.format(ds.id), path='test_install')
         installed_ds = Dataset(op.join(clone_path, 'test_install'))
         assert installed_ds.is_installed()
         assert_repo_status(installed_ds.repo)
@@ -95,12 +95,12 @@ def _test_create_store(host, ds_path, base_path, clone_path):
 
     # remotes now exist in super and sub
     siblings = ds.siblings(result_renderer=None)
-    eq_({'datastore', 'datastore-storage', 'here'}, {s['name'] for s in siblings})
+    eq_({'datastore', 'datastore-ria', 'here'}, {s['name'] for s in siblings})
     sub_siblings = subds.siblings(result_renderer=None)
-    eq_({'datastore', 'datastore-storage', 'here'}, {s['name'] for s in sub_siblings})
+    eq_({'datastore', 'datastore-ria', 'here'}, {s['name'] for s in sub_siblings})
 
-    cfg.unset("annex.ria-remote.datastore-storage.base-path", where='global', reload=True)
-    cfg.unset("annex.ria-remote.datastore-storage.ssh-host", where='global', reload=True)
+    cfg.unset("annex.ria-remote.datastore-ria.base-path", where='global', reload=True)
+    cfg.unset("annex.ria-remote.datastore-ria.ssh-host", where='global', reload=True)
 
 
 def test_create_simple():

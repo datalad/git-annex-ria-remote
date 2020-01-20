@@ -121,7 +121,7 @@ class CreateSiblingRia(Interface):
             args=("--ria-sibling",),
             metavar="RIASIBLING",
             doc="""name of the RIA storage sibling (git-annex special remote). Must not be identical to NAME. 
-            By default NAME is appended with '-storage'""",
+            By default NAME is appended with '-ria'""",
             constraints=EnsureStr() | EnsureNone()),
         force=Parameter(
             args=("-f", "--force"),
@@ -179,7 +179,7 @@ class CreateSiblingRia(Interface):
                 "run 'datalad create' first.".format(ds.path))
 
         if not ria_sibling:
-            ria_sibling = "{}-storage".format(name)
+            ria_sibling = "{}-ria".format(name)
 
         if name == ria_sibling:
             # leads to unresolvable, circular dependency with publish-depends

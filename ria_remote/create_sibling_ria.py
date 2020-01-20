@@ -272,7 +272,7 @@ class CreateSiblingRia(Interface):
                 # run enableremote instead
                 # TODO: Use AnnexRepo.enable_remote (which needs to get `options` first)
                 cmd = ['git', 'annex', 'enableremote'] + ria_remote_options
-                subprocess.run(cmd, cwd=quote_cmdlinearg(ds.path))
+                subprocess.run(cmd, cwd=quote_cmdlinearg(ds.repo.path))
             else:
                 yield get_status_dict(
                     status='error',
@@ -330,7 +330,7 @@ class CreateSiblingRia(Interface):
             if post_update_hook:
                 disabled_hook.rename(enabled_hook)
             if group:
-                subprocess.run(chgrp_cmd, cwd=quote_cmdlinearg(ds.path))
+                subprocess.run(chgrp_cmd, cwd=quote_cmdlinearg(ds.path))  # TODO; do we need a cwd here?
 
         # add a git remote to the bare repository
         # Note: needs annex-ignore! Otherwise we might push into default annex/object tree instead of

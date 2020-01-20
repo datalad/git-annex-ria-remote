@@ -117,10 +117,6 @@ class CreateSiblingRia(Interface):
             args=("-f", "--force"),
             doc="""don't fail on existing siblings. Use and possibly reconfigure them instead.""",
             action='store_true'),
-        no_publish=Parameter(
-            args=("--no-publish",),
-            doc="""whether to publish the dataset's history (no data) to SIBLING after creation.""",
-            action="store_true"),
         no_server=Parameter(
             args=("--no-server",),
             doc="""don't assume the store to be served by a webserver. By default git's update-server-info hook is 
@@ -138,7 +134,6 @@ class CreateSiblingRia(Interface):
             dataset=None,
             storage_sibling=None,
             force=False,
-            no_publish=False,
             no_server=False,
             recursive=False,
             recursion_limit=None
@@ -288,13 +283,6 @@ class CreateSiblingRia(Interface):
             status='ok',
             **res_kwargs,
         )
-
-        if not no_publish:
-            # Publish to the git remote (without data)
-            # This should prevent weird disconnected history situations
-            # and give the remote end an idea who's dataset that is
-            lgr.info("updating sibling {}".format(sibling))
-            yield from ds.publish(to=sibling, transfer_data='none')
 
         if recursive:
             # Note: subdatasets can be treated independently, so go full recursion when querying for them and _no_

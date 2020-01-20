@@ -34,7 +34,7 @@ def test_invalid_calls(path):
     assert_raises(TypeError, ds.create_sibling_ria)
 
     # same name for git- and special remote:
-    assert_raises(ValueError, ds.create_sibling_ria, 'some', storage_sibling='some')
+    assert_raises(ValueError, ds.create_sibling_ria, 'some', ria_sibling='some')
 
     # special remote not configured:
     res = ds.create_sibling_ria('some', return_type='list', on_failure="ignore")
@@ -51,7 +51,8 @@ def _test_create_store(host, ds_path, base_path, clone_path):
 
     # TODO: This is an issue. We are writing to ~/.gitconfig here. Override doesn't work, since RIARemote itself
     #       (actually git-annex!) doesn't have access to it, so initremote will still fail.
-    cfg.set("annex.ria-remote.datastore-storage.base-path", base_path, where='global', reload=True)
+    #       => at least move cfg.set/unset into a decorator, so it doesn't remain when a test is failing.
+    #       cfg.set("annex.ria-remote.datastore-storage.base-path", base_path, where='global', reload=True)
     cfg.set("annex.ria-remote.datastore-storage.ssh-host", host, where='global', reload=True)
 
     ds = Dataset(ds_path).create(force=True)

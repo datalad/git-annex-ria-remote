@@ -2,7 +2,7 @@ import os.path as op
 
 from datalad.api import (
     Dataset,
-    ria_install
+    clone
 )
 from datalad.tests.utils import (
     with_tempfile,
@@ -53,7 +53,7 @@ def _test_create_store(host, ds_path, base_path, clone_path):
     #       (actually git-annex!) doesn't have access to it, so initremote will still fail.
     #       => at least move cfg.set/unset into a decorator, so it doesn't remain when a test is failing.
     cfg.set("annex.ria-remote.datastore-ria.base-path", base_path, where='global', reload=True)
-    cfg.set("annex.ria-remote.datastore-ria.ssh-host", host, where='global', reload=True)
+    cfg.set("annex.ria-remote.datastore-ria.ssh-host", host or '0', where='global', reload=True)
 
     ds = Dataset(ds_path).create(force=True)
     subds = ds.create('sub', force=True)
@@ -63,8 +63,7 @@ def _test_create_store(host, ds_path, base_path, clone_path):
     # don't specify special remote. By default should be git-remote + "-storage", which is what we configured
     res = ds.create_sibling_ria("datastore")
     assert_result_count(res, 1, status='ok', action='create-sibling-ria')
-    assert_result_count(res, 1, status='ok', action='publish')
-    eq_(len(res), 2)
+    eq_(len(res), 1)
 
     # remotes exist, but only in super
     siblings = ds.siblings(result_renderer=None)
@@ -77,7 +76,14 @@ def _test_create_store(host, ds_path, base_path, clone_path):
     # implicit test of success by ria-installing from store:
     ds.publish(to="datastore", transfer_data='all')
     with chpwd(clone_path):
-        ria_install('datastore-ria:{}'.format(ds.id), path='test_install')
+        if host:
+            clone('ria+ssh://datastore-ria#{}'.format(ds.id), path='test_install')
+        else:
+            # TODO: Whenever ria+file supports special remote config (label), change here:
+            clone('ria+file://{}#{}'.format(base_path, ds.id), path='test_install')
+
+
+
         installed_ds = Dataset(op.join(clone_path, 'test_install'))
         assert installed_ds.is_installed()
         assert_repo_status(installed_ds.repo)
@@ -89,8 +95,7 @@ def _test_create_store(host, ds_path, base_path, clone_path):
 
     # now, again but recursive. force should deal with existing remotes in super
     res = ds.create_sibling_ria("datastore", recursive=True, force=True)
-    eq_(len(res), 4)
-    assert_result_count(res, 2, status='ok', action="publish")
+    eq_(len(res), 2)
     assert_result_count(res, 2, status='ok', action="create-sibling-ria")
 
     # remotes now exist in super and sub
@@ -105,7 +110,7 @@ def _test_create_store(host, ds_path, base_path, clone_path):
 
 def test_create_simple():
 
-    yield _test_create_store, '0'
+    yield _test_create_store, None
     yield skip_ssh(_test_create_store), 'datalad-test'
 
 

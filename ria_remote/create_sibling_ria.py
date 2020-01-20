@@ -163,7 +163,8 @@ class CreateSiblingRia(Interface):
 
         # TODO: messages - this is "create-sibling". Don't confuse existence of local remotes with existence of the
         #       actual remote sibling in wording
-        if not force and sibling in [r['name'] for r in ds.siblings(result_renderer=None)]:
+        ds_siblings = [r['name'] for r in ds.siblings(result_renderer=None)]
+        if not force and sibling in ds_siblings:
             yield get_status_dict(
                 status='error',
                 message="a sibling '{}' is already configured. Use --force to overwrite it.".format(sibling),
@@ -171,7 +172,7 @@ class CreateSiblingRia(Interface):
             )
             return
 
-        if not force and storage_sibling in [r['name'] for r in ds.siblings(result_renderer=None)]:
+        if not force and storage_sibling in ds_siblings:
             yield get_status_dict(
                 status='error',
                 message="a storage-sibling '{}' is already configured. Use --force to overwrite it.".format(storage_sibling),
@@ -263,10 +264,13 @@ class CreateSiblingRia(Interface):
         # into an archive. Special remote will then not be able to access content in the "wrong" place within the
         # archive
         lgr.debug("set up git remote")
-        # TODO: - This results in "[WARNING] Failed to determine if datastore carries annex."
+        # TODO: - This sibings call results in "[WARNING] Failed to determine if datastore carries annex."
         #         (see https://github.com/datalad/datalad/issues/4028)
+        #         => for now have annex-ignore configured before. Evtl. Allow configure/add to include that option
         #       - additionally there's https://github.com/datalad/datalad/issues/3989, where datalad-siblings might
         #         hang forever
+        ds.config.set("remote.{}.annex-ignore".format(sibling), value="true", where="local")
+        # TODO: call siblings with fetch=False?
         ds.siblings(
             'configure',
             name=sibling,
@@ -277,7 +281,6 @@ class CreateSiblingRia(Interface):
             publish_depends=storage_sibling,
             result_renderer=None)
 
-        ds.config.set("remote.{}.annex-ignore".format(sibling), value="true", where="local")
         yield get_status_dict(
             status='ok',
             **res_kwargs,

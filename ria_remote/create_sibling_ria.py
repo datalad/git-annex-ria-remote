@@ -42,6 +42,12 @@ from datalad.utils import (
     quote_cmdlinearg
 )
 
+from datalad.support.exceptions import (
+    CommandError
+)
+from datalad.support.gitrepo import (
+    GitRepo
+)
 from ria_remote.remote import RIARemote
 
 lgr = logging.getLogger('datalad.ria_remote.create_sibling_ria')
@@ -197,23 +203,22 @@ class CreateSiblingRia(Interface):
         lgr.info("create siblings '{}' and '{}' ...".format(sibling, storage_sibling))
 
         lgr.debug('init special remote {}'.format(storage_sibling))
-        cmd = ['git', 'annex',
-               'initremote', storage_sibling,
-               'type=external',
-               'externaltype=ria',
-               'encryption=none',
-               'autoenable=true'
-               ]
-        result = subprocess.run(cmd, cwd=str(ds.path), stderr=subprocess.PIPE)
-        if result.returncode != 0:
-            if force and result.stderr.startswith(b'git-annex: There is already a special remote named'):
+        ria_remote_options = ['type=external',
+                              'externaltype=ria',
+                              'encryption=none',
+                              'autoenable=true']
+        try:
+            ds.repo.init_remote(storage_sibling, options=ria_remote_options)
+        except CommandError as e:
+            if force and e.stderr.startswith(b'git-annex: There is already a special remote named'):
                 # run enableremote instead
-                cmd[2] = 'enableremote'
+                # TODO: Use AnnexRepo.enable_remote (which needs to get `options` first)
+                cmd = ['git', 'annex', 'enableremote'] + ria_remote_options
                 subprocess.run(cmd, cwd=str(ds.path))
             else:
                 yield get_status_dict(
                     status='error',
-                    message="initremote failed.\nstdout: %s\nstderr: %s" % (result.stdout, result.stderr),
+                    message="initremote failed.\nstdout: %s\nstderr: %s" % (e.stdout, e.stderr),
                     **res_kwargs
                 )
                 return
@@ -228,8 +233,7 @@ class CreateSiblingRia(Interface):
         #       - this leads to the third option: Have that creation routine importable and callable from
         #         ria-remote package without the need to actually instantiate a RIARemote object
         lgr.debug("initializing object store")
-        subprocess.run(['git', 'annex', 'fsck', '--from={}'.format(storage_sibling), '--fast', '--exclude=*/*'],
-                       cwd=str(ds.path))
+        ds.repo.fsck(remote=storage_sibling, fast=True, annex_options=['--exclude=*/*'])
 
         # 2. create a bare repository in-store:
         # determine layout locations
@@ -238,8 +242,8 @@ class CreateSiblingRia(Interface):
         lgr.debug("init bare repository")
         # TODO: we should prob. check whether it's there already. How?
         # Note: like the special remote itself, we assume local FS if no SSH host is specified
-        disabled_hook = quote_cmdlinearg(str(repo_path / 'hooks' / 'post-update.sample'))
-        enabled_hook = quote_cmdlinearg(str(repo_path / 'hooks' / 'post-update'))
+        disabled_hook = repo_path / 'hooks' / 'post-update.sample'
+        enabled_hook = repo_path / 'hooks' / 'post-update'
 
         if ssh_host:
             from datalad import ssh_manager
@@ -247,13 +251,12 @@ class CreateSiblingRia(Interface):
             ssh.open()
             ssh('cd {} && git init --bare'.format(quote_cmdlinearg(str(repo_path))))
             if post_update_hook:
-                ssh('mv {} {}'.format(disabled_hook, enabled_hook))
+                ssh('mv {} {}'.format(quote_cmdlinearg(str(disabled_hook)),
+                                      quote_cmdlinearg(str(enabled_hook))))
         else:
-            cmd = ['git', 'init', '--bare']
-            subprocess.run(cmd, cwd=str(repo_path), check=True)
+            GitRepo(repo_path, create=True, bare=True)
             if post_update_hook:
-                cmd = ['mv', disabled_hook, enabled_hook]
-                subprocess.run(cmd, cwd=str(repo_path), check=True)
+                disabled_hook.rename(enabled_hook)
 
         # add a git remote to the bare repository
         # Note: needs annex-ignore! Otherwise we might push into default annex/object tree instead of

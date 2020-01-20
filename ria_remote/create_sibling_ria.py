@@ -31,6 +31,7 @@ from datalad.support.param import Parameter
 from datalad.support.constraints import (
     EnsureNone,
     EnsureStr,
+    EnsureBool
 )
 from datalad.distribution.dataset import (
     EnsureDataset,
@@ -130,6 +131,22 @@ class CreateSiblingRia(Interface):
             args=("--post-update-hook",),
             doc="""Enable git's default post-update-hook on the remote end""",
             action="store_true"),
+        shared=Parameter(
+            args=("--shared",),
+            metavar='{false|true|umask|group|all|world|everybody|0xxx}',
+            doc="""if given, configures the access permissions on the server
+        for multi-users (this could include access by a webserver!).
+        Possible values for this option are identical to those of
+        `git init --shared` and are described in its documentation.""",
+            constraints=EnsureStr() | EnsureBool() | EnsureNone()),
+        group=Parameter(
+            args=("--group",),
+            metavar="GROUP",
+            doc="""Filesystem group for the repository. Specifying the group is
+        particularly important when [CMD: --shared=group CMD][PY:
+        shared="group" PY]""",
+            constraints=EnsureStr() | EnsureNone()
+        ),
         recursive=recursion_flag,
         recursion_limit=recursion_limit,
     )
@@ -142,6 +159,8 @@ class CreateSiblingRia(Interface):
                  ria_sibling=None,
                  force=False,
                  post_update_hook=False,
+                 shared=None,
+                 group=None,
                  recursive=False,
                  recursion_limit=None
                  ):
@@ -216,7 +235,7 @@ class CreateSiblingRia(Interface):
                 # run enableremote instead
                 # TODO: Use AnnexRepo.enable_remote (which needs to get `options` first)
                 cmd = ['git', 'annex', 'enableremote'] + ria_remote_options
-                subprocess.run(cmd, cwd=str(ds.path))
+                subprocess.run(cmd, cwd=quote_cmdlinearg(ds.path))
             else:
                 yield get_status_dict(
                     status='error',
@@ -247,18 +266,32 @@ class CreateSiblingRia(Interface):
         disabled_hook = repo_path / 'hooks' / 'post-update.sample'
         enabled_hook = repo_path / 'hooks' / 'post-update'
 
+        if group:
+            chgrp_cmd = "chgrp -R {} {}".format(quote_cmdlinearg(str(group)), quote_cmdlinearg(str(repo_path)))
+
         if ssh_host:
             from datalad import ssh_manager
             ssh = ssh_manager.get_connection(ssh_host, use_remote_annex_bundle=False)
             ssh.open()
-            ssh('cd {} && git init --bare'.format(quote_cmdlinearg(str(repo_path))))
+            ssh('cd {rootdir} && git init --bare{shared}'.format(
+                rootdir=quote_cmdlinearg(str(repo_path)),
+                shared=" --shared='{}'".format(quote_cmdlinearg(shared)) if shared else ''
+            ))
             if post_update_hook:
                 ssh('mv {} {}'.format(quote_cmdlinearg(str(disabled_hook)),
                                       quote_cmdlinearg(str(enabled_hook))))
+
+            if group:
+                # Either repository existed before or a new directory was created for it,
+                # set its group to a desired one if was provided with the same chgrp
+                ssh(chgrp_cmd)
         else:
-            GitRepo(repo_path, create=True, bare=True)
+            GitRepo(repo_path, create=True, bare=True,
+                    shared=" --shared='{}'".format(quote_cmdlinearg(shared)) if shared else None)
             if post_update_hook:
                 disabled_hook.rename(enabled_hook)
+            if group:
+                subprocess.run(chgrp_cmd, cwd=quote_cmdlinearg(ds.path))
 
         # add a git remote to the bare repository
         # Note: needs annex-ignore! Otherwise we might push into default annex/object tree instead of

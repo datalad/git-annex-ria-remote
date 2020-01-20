@@ -268,7 +268,7 @@ class CreateSiblingRia(Interface):
         try:
             ds.repo.init_remote(ria_sibling, options=ria_remote_options)
         except CommandError as e:
-            if force and e.stderr.startswith('git-annex: There is already a special remote named'):
+            if force and 'git-annex: There is already a special remote named' in e.stderr:
                 # run enableremote instead
                 # TODO: Use AnnexRepo.enable_remote (which needs to get `options` first)
                 cmd = ['git', 'annex', 'enableremote'] + ria_remote_options

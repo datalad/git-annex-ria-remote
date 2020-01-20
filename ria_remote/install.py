@@ -63,7 +63,6 @@ class Install(Clone):
             dataset=None,
             description=None,
             reckless=False,
-            alt_sources=None,
             ephemeral=False):
 
         src_regex = re.compile(
@@ -114,7 +113,6 @@ class Install(Clone):
                 dataset=dataset,
                 description=description,
                 reckless=reckless,
-                alt_sources=alt_sources,
                 result_filter=None,
                 result_renderer='disabled',
                 on_failure='stop'):

@@ -1,2 +1,2 @@
 nose
-git+https://github.com/bpoldrack/datalad.git@master
+git+https://github.com/datalad/datalad.git@master

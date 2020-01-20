@@ -117,10 +117,9 @@ class CreateSiblingRia(Interface):
             args=("-f", "--force"),
             doc="""don't fail on existing siblings. Use and possibly reconfigure them instead.""",
             action='store_true'),
-        no_server=Parameter(
-            args=("--no-server",),
-            doc="""don't assume the store to be served by a webserver. By default git's update-server-info hook is 
-            enabled. With this option that can be disabled.""",
+        post_update_hook=Parameter(
+            args=("--post-update-hook",),
+            doc="""Enable git's default post-update-hook on the remote end""",
             action="store_true"),
         recursive=recursion_flag,
         recursion_limit=recursion_limit,
@@ -134,7 +133,7 @@ class CreateSiblingRia(Interface):
             dataset=None,
             storage_sibling=None,
             force=False,
-            no_server=False,
+            post_update_hook=False,
             recursive=False,
             recursion_limit=None
     ):
@@ -247,12 +246,12 @@ class CreateSiblingRia(Interface):
             ssh = ssh_manager.get_connection(ssh_host, use_remote_annex_bundle=False)
             ssh.open()
             ssh('cd {} && git init --bare'.format(quote_cmdlinearg(str(repo_path))))
-            if not no_server:
+            if post_update_hook:
                 ssh('mv {} {}'.format(disabled_hook, enabled_hook))
         else:
             cmd = ['git', 'init', '--bare']
             subprocess.run(cmd, cwd=str(repo_path), check=True)
-            if not no_server:
+            if post_update_hook:
                 cmd = ['mv', disabled_hook, enabled_hook]
                 subprocess.run(cmd, cwd=str(repo_path), check=True)
 

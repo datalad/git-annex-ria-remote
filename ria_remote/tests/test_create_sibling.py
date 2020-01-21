@@ -34,7 +34,7 @@ def test_invalid_calls(path):
     assert_raises(TypeError, ds.create_sibling_ria)
 
     # same name for git- and special remote:
-    assert_raises(ValueError, ds.create_sibling_ria, 'ria+file:///some/where', name='some', ria_sibling='some')
+    assert_raises(ValueError, ds.create_sibling_ria, 'ria+file:///some/where', name='some', ria_remote='some')
 
     # special remote not configured:
     res = ds.create_sibling_ria('ria+file:///some/where', name='some', return_type='list', on_failure="ignore")
@@ -99,7 +99,7 @@ def _test_create_store(host, ds_path, base_path, clone_path):
                                                                    base=base_path),
                                 "datastore",
                                 recursive=True,
-                                force=True)
+                                existing='replace')
     eq_(len(res), 2)
     assert_result_count(res, 2, status='ok', action="create-sibling-ria")
 

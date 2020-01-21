@@ -31,7 +31,8 @@ from datalad.support.param import Parameter
 from datalad.support.constraints import (
     EnsureNone,
     EnsureStr,
-    EnsureBool
+    EnsureBool,
+    EnsureChoice
 )
 from datalad.distribution.dataset import (
     EnsureDataset,
@@ -104,8 +105,7 @@ class CreateSiblingRia(Interface):
     toplevel.
     """
 
-    # TODO: option to skip existing remotes in case of recursive?
-
+    # TODO: description?
     _params_ = dict(
         dataset=Parameter(
             args=("-d", "--dataset"),
@@ -132,10 +132,6 @@ class CreateSiblingRia(Interface):
             doc="""name of the RIA storage sibling (git-annex special remote). Must not be identical to NAME. 
             By default NAME is appended with '-ria'""",
             constraints=EnsureStr() | EnsureNone()),
-        force=Parameter(
-             args=("-f", "--force"),
-            doc="""don't fail on existing siblings. Use and possibly reconfigure them instead.""",
-            action='store_true'),
         post_update_hook=Parameter(
             args=("--post-update-hook",),
             doc="""Enable git's default post-update-hook on the remote end""",
@@ -159,6 +155,16 @@ class CreateSiblingRia(Interface):
             args=("--no-ria-remote",),
             doc="""don't establish a ria-remote in addition to the sibling NAME.""",
             action="store_true"),
+        existing=Parameter(
+            args=("--existing",),
+            constraints=EnsureChoice('skip', 'replace', 'error', 'reconfigure'),
+            metavar='MODE',
+            doc="""action to perform, if a sibling or ria-remote is already configured under the
+        given name and/or a target already exists.
+        In this case, a dataset can be skipped ('skip'), an existing target
+        directory be forcefully re-initialized, and the sibling (re-)configured
+        ('replace', implies 'reconfigure'), the sibling configuration be updated
+        only ('reconfigure'), or to error ('error').""", ),
         recursive=recursion_flag,
         recursion_limit=recursion_limit,
     )
@@ -170,11 +176,11 @@ class CreateSiblingRia(Interface):
                  name,
                  dataset=None,
                  ria_remote=None,
-                 force=False,
                  post_update_hook=False,
                  shared=None,
                  group=None,
                  no_ria_remote=False,
+                 existing='error',
                  recursive=False,
                  recursion_limit=None
                  ):
@@ -202,25 +208,6 @@ class CreateSiblingRia(Interface):
             # leads to unresolvable, circular dependency with publish-depends
             raise ValueError("sibling names must not be equal")
 
-        # TODO: messages - this is "create-sibling". Don't confuse existence of local remotes with existence of the
-        #       actual remote sibling in wording
-        ds_siblings = [r['name'] for r in ds.siblings(result_renderer=None)]
-        if not force and name in ds_siblings:
-            yield get_status_dict(
-                status='error',
-                message="a sibling '{}' is already configured. Use --force to overwrite it.".format(name),
-                **res_kwargs,
-            )
-            return
-
-        if not no_ria_remote and not force and ria_remote in ds_siblings:
-            yield get_status_dict(
-                status='error',
-                message="a storage-sibling '{}' is already configured. Use --force to overwrite it.".format(ria_remote),
-                **res_kwargs,
-            )
-            return
-
         # parse target URL
         # Note: For python API we should be able to deal with RI and its subclasses. However, currently quite a dance
         # needed (see below)
@@ -233,7 +220,7 @@ class CreateSiblingRia(Interface):
 
         # check special remote config:
         base_path = src_url_ri.path
-        #if not base_path:
+        # if not base_path:
         #    # TODO: consider annexconfig the same way the special remote does (in-dataset special remote config)
         #    base_path = ds.config.get("annex.ria-remote.{}.base-path".format(ria_sibling), None)
         if not no_ria_remote and not ds.config.get("annex.ria-remote.{}.base-path".format(ria_remote), None):
@@ -259,131 +246,188 @@ class CreateSiblingRia(Interface):
         #         then to distinguish base-path from repo-path?
 
         ssh_host = src_url_ri.hostname
-        #if not ssh_host:
+        # if not ssh_host:
         #    ssh_host = ds.config.get("annex.ria-remote.{}.ssh-host".format(ria_sibling), None)
         if not ssh_host:
             lgr.info("No SSH-Host configured for {}. Assume local RIA store at {}.".format(ria_remote, base_path))
         if ssh_host == '0':
             ssh_host = None
-        lgr.info("create sibling{} '{}'{} ...".format('s' if ria_remote else '',
-                                                      name,
-                                                      " and '{}'".format(ria_remote) if ria_remote else '',
-                                                      ))
 
-        if not no_ria_remote:
-            lgr.debug('init special remote {}'.format(ria_remote))
-            ria_remote_options = ['type=external',
-                                  'externaltype=ria',
-                                  'encryption=none',
-                                  'autoenable=true']
-            try:
-                ds.repo.init_remote(ria_remote, options=ria_remote_options)
-            except CommandError as e:
-                if force and 'git-annex: There is already a special remote named' in e.stderr:
-                    # run enableremote instead
-                    # TODO: Use AnnexRepo.enable_remote (which needs to get `options` first)
-                    cmd = ['git', 'annex', 'enableremote'] + ria_remote_options
-                    subprocess.run(cmd, cwd=quote_cmdlinearg(ds.repo.path))
-                else:
-                    yield get_status_dict(
+        # Query existing siblings upfront in order to fail early on existing=='error', since misconfiguration
+        # (particularly of special remotes) only to fail in a subdataset later on with that config, can be quite painful.
+        # TODO: messages - this is "create-sibling". Don't confuse existence of local remotes with existence of the
+        #       actual remote sibling in wording
+        if existing == 'error':
+            failed = False  # even if we have to fail, let's report all conflicting siblings in subdatasets
+            for r in ds.siblings(result_renderer=None,
+                                 recursive=recursive,
+                                 recursion_limit=recursion_limit):
+                if not r['type'] == 'sibling' or r['status'] != 'ok':
+                    yield r
+                    continue
+                if r['name'] == name:
+                    res = get_status_dict(
                         status='error',
-                        message="initremote failed.\nstdout: %s\nstderr: %s" % (e.stdout, e.stderr),
-                        **res_kwargs
+                        message="a sibling '{}' is already configured in dataset {}".format(name, r['path']),
+                        **res_kwargs,
                     )
-                    return
+                    failed = True
+                    yield res
+                    continue
+                if ria_remote and r['name'] == ria_remote:
+                    res = get_status_dict(
+                        status='error',
+                        message="a sibling '{}' is already configured in dataset {}".format(ria_remote, r['path']),
+                        **res_kwargs,
+                    )
+                    failed = True
+                    yield res
+                    continue
+            if failed:
+                return
 
-            # 1. create remote object store:
-            # Note: All it actually takes is to trigger the special remote's `prepare` method once.
-            # ATM trying to achieve that by invoking a minimal fsck.
-            # TODO: - It's probably faster to actually talk to the special remote (i.e. pretending to be annex and use the
-            #         protocol to send PREPARE)
-            #       - Alternatively we can create the remote directory and ria version file directly, but this means code
-            #         duplication that then needs to be kept in sync with ria-remote implementation.
-            #       - this leads to the third option: Have that creation routine importable and callable from
-            #         ria-remote package without the need to actually instantiate a RIARemote object
-            lgr.debug("initializing object store")
-            ds.repo.fsck(remote=ria_remote, fast=True, annex_options=['--exclude=*/*'])
+        ds_siblings = [r['name'] for r in ds.siblings(result_renderer=None)]
+        # Figure whether we are supposed to skip this very dataset
+        skip = False
+        if existing == 'skip' and (name in ds_siblings or (ria_remote and ria_remote in ds_siblings)):
+            yield get_status_dict(
+                status='notneeded',
+                message="Skipped on existing sibling",
+                **res_kwargs
+            )
+            skip = True
 
-        # 2. create a bare repository in-store:
-        # determine layout locations
-        # TODO: This is here for repo_path only. Actually included in target_props['giturl'], but not easily
-        #       accessible.
-        repo_path, archive_path, objects_path = RIARemote.get_layout_locations(base_path, ds.id)
+        if not skip:
+            lgr.info("create sibling{} '{}'{} ...".format('s' if ria_remote else '',
+                                                          name,
+                                                          " and '{}'".format(ria_remote) if ria_remote else '',
+                                                          ))
+            if not no_ria_remote:
+                lgr.debug('init special remote {}'.format(ria_remote))
+                ria_remote_options = ['type=external',
+                                      'externaltype=ria',
+                                      'encryption=none',
+                                      'autoenable=true']
+                try:
+                    ds.repo.init_remote(ria_remote, options=ria_remote_options)
+                except CommandError as e:
+                    if existing in ['replace', 'reconfigure'] and 'git-annex: There is already a special remote named' in e.stderr:
+                        # run enableremote instead
+                        lgr.debug("special remote '%s' already exists. Run enableremote instead.", ria_remote)
+                        # TODO: Use AnnexRepo.enable_remote (which needs to get `options` first)
+                        cmd = ['git', 'annex', 'enableremote', ria_remote] + ria_remote_options
+                        subprocess.run(cmd, cwd=quote_cmdlinearg(ds.repo.path))
+                    else:
+                        yield get_status_dict(
+                            status='error',
+                            message="initremote failed.\nstdout: %s\nstderr: %s" % (e.stdout, e.stderr),
+                            **res_kwargs
+                        )
+                        return
 
-        lgr.debug("init bare repository")
-        # TODO: we should prob. check whether it's there already. How?
-        # Note: like the special remote itself, we assume local FS if no SSH host is specified
-        disabled_hook = repo_path / 'hooks' / 'post-update.sample'
-        enabled_hook = repo_path / 'hooks' / 'post-update'
+                # 1. create remote object store:
+                # Note: All it actually takes is to trigger the special remote's `prepare` method once.
+                # ATM trying to achieve that by invoking a minimal fsck.
+                # TODO: - It's probably faster to actually talk to the special remote (i.e. pretending to be annex and use
+                #         the protocol to send PREPARE)
+                #       - Alternatively we can create the remote directory and ria version file directly, but this means
+                #         code duplication that then needs to be kept in sync with ria-remote implementation.
+                #       - this leads to the third option: Have that creation routine importable and callable from
+                #         ria-remote package without the need to actually instantiate a RIARemote object
+                lgr.debug("initializing object store")
+                ds.repo.fsck(remote=ria_remote, fast=True, annex_options=['--exclude=*/*'])
 
-        if group:
-            chgrp_cmd = "chgrp -R {} {}".format(quote_cmdlinearg(str(group)), quote_cmdlinearg(str(repo_path)))
+            # 2. create a bare repository in-store:
+            # determine layout locations
+            # TODO: This is here for repo_path only. Actually included in target_props['giturl'], but not easily
+            #       accessible.
+            repo_path, _, _ = RIARemote.get_layout_locations(base_path, ds.id)
 
-        if ssh_host:
-            from datalad import ssh_manager
-            ssh = ssh_manager.get_connection(ssh_host, use_remote_annex_bundle=False)
-            ssh.open()
-            ssh('cd {rootdir} && git init --bare{shared}'.format(
-                rootdir=quote_cmdlinearg(str(repo_path)),
-                shared=" --shared='{}'".format(quote_cmdlinearg(shared)) if shared else ''
-            ))
-            if post_update_hook:
-                ssh('mv {} {}'.format(quote_cmdlinearg(str(disabled_hook)),
-                                      quote_cmdlinearg(str(enabled_hook))))
+            lgr.debug("init bare repository")
+            # TODO: we should prob. check whether it's there already. How?
+            # Note: like the special remote itself, we assume local FS if no SSH host is specified
+            disabled_hook = repo_path / 'hooks' / 'post-update.sample'
+            enabled_hook = repo_path / 'hooks' / 'post-update'
 
             if group:
-                # Either repository existed before or a new directory was created for it,
-                # set its group to a desired one if was provided with the same chgrp
-                ssh(chgrp_cmd)
-        else:
-            GitRepo(repo_path, create=True, bare=True,
-                    shared=" --shared='{}'".format(quote_cmdlinearg(shared)) if shared else None)
-            if post_update_hook:
-                disabled_hook.rename(enabled_hook)
-            if group:
-                subprocess.run(chgrp_cmd, cwd=quote_cmdlinearg(ds.path))  # TODO; do we need a cwd here?
+                chgrp_cmd = "chgrp -R {} {}".format(quote_cmdlinearg(str(group)), quote_cmdlinearg(str(repo_path)))
 
-        # add a git remote to the bare repository
-        # Note: needs annex-ignore! Otherwise we might push into default annex/object tree instead of
-        # directory type tree with dirhash lower. This in turn would be an issue, if we want to pack the entire thing
-        # into an archive. Special remote will then not be able to access content in the "wrong" place within the
-        # archive
-        lgr.debug("set up git remote")
-        # TODO: - This sibings call results in "[WARNING] Failed to determine if datastore carries annex."
-        #         (see https://github.com/datalad/datalad/issues/4028)
-        #         => for now have annex-ignore configured before. Evtl. Allow configure/add to include that option
-        #       - additionally there's https://github.com/datalad/datalad/issues/3989, where datalad-siblings might
-        #         hang forever
-        ds.config.set("remote.{}.annex-ignore".format(name), value="true", where="local")
-        ds.siblings(
-            'configure',
-            name=name,
-            url=target_props['giturl']
-            if ssh_host
-            else str(repo_path),
-            recursive=False,
-            publish_depends=ria_remote,  # Note, that this should be None if no_ria_remote was given
-            result_renderer=None,
-            fetch=False
-        )
+            if ssh_host:
+                from datalad import ssh_manager
+                ssh = ssh_manager.get_connection(ssh_host, use_remote_annex_bundle=False)
+                ssh.open()
+                ssh('cd {rootdir} && git init --bare{shared}'.format(
+                    rootdir=quote_cmdlinearg(str(repo_path)),
+                    shared=" --shared='{}'".format(quote_cmdlinearg(shared)) if shared else ''
+                ))
+                if post_update_hook:
+                    ssh('mv {} {}'.format(quote_cmdlinearg(str(disabled_hook)),
+                                          quote_cmdlinearg(str(enabled_hook))))
 
-        yield get_status_dict(
-            status='ok',
-            **res_kwargs,
-        )
+                if group:
+                    # Either repository existed before or a new directory was created for it,
+                    # set its group to a desired one if was provided with the same chgrp
+                    ssh(chgrp_cmd)
+            else:
+                GitRepo(repo_path, create=True, bare=True,
+                        shared=" --shared='{}'".format(quote_cmdlinearg(shared)) if shared else None)
+                if post_update_hook:
+                    disabled_hook.rename(enabled_hook)
+                if group:
+                    subprocess.run(chgrp_cmd, cwd=quote_cmdlinearg(ds.path))  # TODO; do we need a cwd here?
+
+            # add a git remote to the bare repository
+            # Note: needs annex-ignore! Otherwise we might push into default annex/object tree instead of
+            # directory type tree with dirhash lower. This in turn would be an issue, if we want to pack the entire thing
+            # into an archive. Special remote will then not be able to access content in the "wrong" place within the
+            # archive
+            lgr.debug("set up git remote")
+            # TODO: - This sibings call results in "[WARNING] Failed to determine if datastore carries annex."
+            #         (see https://github.com/datalad/datalad/issues/4028)
+            #         => for now have annex-ignore configured before. Evtl. Allow configure/add to include that option
+            #       - additionally there's https://github.com/datalad/datalad/issues/3989, where datalad-siblings might
+            #         hang forever
+            if name in ds_siblings:
+                assert existing in ['replace', 'reconfigure']  # otherwise we should have skipped or failed before
+            ds.config.set("remote.{}.annex-ignore".format(name), value="true", where="local")
+            ds.siblings(
+                'configure',
+                name=name,
+                url=target_props['giturl']
+                if ssh_host
+                else str(repo_path),
+                recursive=False,
+                publish_depends=ria_remote,  # Note, that this should be None if no_ria_remote was given
+                result_renderer=None,
+                fetch=False
+            )
+
+            yield get_status_dict(
+                status='ok',
+                **res_kwargs,
+            )
 
         if recursive:
             # Note: subdatasets can be treated independently, so go full recursion when querying for them and _no_
             # recursion with the actual call. Theoretically this can be parallelized.
-            for subds in ds.subdatasets(fulfilled=True,
-                                        recursive=True,
-                                        recursion_limit=recursion_limit,
-                                        result_xfm='datasets'):
+
+            if existing == 'skip':
+                todo_subs = {r['path'] for r in ds.siblings(result_renderer=None,
+                                                            recursive=recursive,
+                                                            recursion_limit=recursion_limit)
+                             if r['name'] not in [name, ria_remote]}
+            else:
+                todo_subs = ds.subdatasets(fulfilled=True,
+                                           recursive=True,
+                                           recursion_limit=recursion_limit,
+                                           result_xfm='datasets')
+
+            for subds in todo_subs:
                 yield from CreateSiblingRia.__call__(url=url,
                                                      name=name,
                                                      dataset=subds,
                                                      ria_remote=ria_remote,
-                                                     force=force,
+                                                     existing=existing,
                                                      post_update_hook=post_update_hook,
                                                      no_ria_remote=no_ria_remote,
                                                      shared=shared,

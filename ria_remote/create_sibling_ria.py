@@ -199,7 +199,7 @@ class CreateSiblingRia(Interface):
                 "run 'datalad create' first.".format(ds.path))
 
         if no_ria_remote and ria_remote_name:
-            raise ValueError("no-ria-remote and ria-remote were given simultanously.")
+            raise ValueError("no-ria-remote and ria-remote-name were given simultanously.")
 
         if not no_ria_remote and not ria_remote_name:
             ria_remote_name = "{}-ria".format(name)
@@ -451,7 +451,7 @@ class CreateSiblingRia(Interface):
                 recursive=False,
                 publish_depends=ria_remote_name,  # Note, that this should be None if no_ria_remote was given
                 result_renderer=None,
-                fetch=False
+                fetch=True  # Note, that otherwise a subsequent publish will report "notneeded".
             )
 
             yield get_status_dict(

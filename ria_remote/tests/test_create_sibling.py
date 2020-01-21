@@ -34,7 +34,7 @@ def test_invalid_calls(path):
     assert_raises(TypeError, ds.create_sibling_ria)
 
     # same name for git- and special remote:
-    assert_raises(ValueError, ds.create_sibling_ria, 'ria+file:///some/where', name='some', ria_remote='some')
+    assert_raises(ValueError, ds.create_sibling_ria, 'ria+file:///some/where', name='some', ria_remote_name='some')
 
     # special remote not configured:
     res = ds.create_sibling_ria('ria+file:///some/where', name='some', return_type='list', on_failure="ignore")

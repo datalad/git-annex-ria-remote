@@ -126,8 +126,8 @@ class CreateSiblingRia(Interface):
                 the subdatasets' siblings. When creating a target dataset fails,
                 no sibling is added""",
             constraints=EnsureStr() | EnsureNone()),
-        ria_remote=Parameter(
-            args=("--ria-remote",),
+        ria_remote_name=Parameter(
+            args=("--ria-remote-name",),
             metavar="RIAREMOTE",
             doc="""name of the RIA storage sibling (git-annex special remote). Must not be identical to NAME. 
             By default NAME is appended with '-ria'""",
@@ -175,7 +175,7 @@ class CreateSiblingRia(Interface):
     def __call__(url,
                  name,
                  dataset=None,
-                 ria_remote=None,
+                 ria_remote_name=None,
                  post_update_hook=False,
                  shared=None,
                  group=None,
@@ -198,13 +198,13 @@ class CreateSiblingRia(Interface):
                 "Repository at {} is not a DataLad dataset, "
                 "run 'datalad create' first.".format(ds.path))
 
-        if no_ria_remote and ria_remote:
+        if no_ria_remote and ria_remote_name:
             raise ValueError("no-ria-remote and ria-remote were given simultanously.")
 
-        if not no_ria_remote and not ria_remote:
-            ria_remote = "{}-ria".format(name)
+        if not no_ria_remote and not ria_remote_name:
+            ria_remote_name = "{}-ria".format(name)
 
-        if not no_ria_remote and name == ria_remote:
+        if not no_ria_remote and name == ria_remote_name:
             # leads to unresolvable, circular dependency with publish-depends
             raise ValueError("sibling names must not be equal")
 
@@ -223,10 +223,10 @@ class CreateSiblingRia(Interface):
         # if not base_path:
         #    # TODO: consider annexconfig the same way the special remote does (in-dataset special remote config)
         #    base_path = ds.config.get("annex.ria-remote.{}.base-path".format(ria_sibling), None)
-        if not no_ria_remote and not ds.config.get("annex.ria-remote.{}.base-path".format(ria_remote), None):
+        if not no_ria_remote and not ds.config.get("annex.ria-remote.{}.base-path".format(ria_remote_name), None):
             yield get_status_dict(
                 status='impossible',
-                message="Missing required configuration 'annex.ria-remote.{}.base-path'".format(ria_remote),
+                message="Missing required configuration 'annex.ria-remote.{}.base-path'".format(ria_remote_name),
                 **res_kwargs,
             )
             return
@@ -249,7 +249,7 @@ class CreateSiblingRia(Interface):
         # if not ssh_host:
         #    ssh_host = ds.config.get("annex.ria-remote.{}.ssh-host".format(ria_sibling), None)
         if not ssh_host:
-            lgr.info("No SSH-Host configured for {}. Assume local RIA store at {}.".format(ria_remote, base_path))
+            lgr.info("No SSH-Host configured for {}. Assume local RIA store at {}.".format(ria_remote_name, base_path))
         if ssh_host == '0':
             ssh_host = None
 
@@ -274,10 +274,10 @@ class CreateSiblingRia(Interface):
                     failed = True
                     yield res
                     continue
-                if ria_remote and r['name'] == ria_remote:
+                if ria_remote_name and r['name'] == ria_remote_name:
                     res = get_status_dict(
                         status='error',
-                        message="a sibling '{}' is already configured in dataset {}".format(ria_remote, r['path']),
+                        message="a sibling '{}' is already configured in dataset {}".format(ria_remote_name, r['path']),
                         **res_kwargs,
                     )
                     failed = True
@@ -289,7 +289,7 @@ class CreateSiblingRia(Interface):
         ds_siblings = [r['name'] for r in ds.siblings(result_renderer=None)]
         # Figure whether we are supposed to skip this very dataset
         skip = False
-        if existing == 'skip' and (name in ds_siblings or (ria_remote and ria_remote in ds_siblings)):
+        if existing == 'skip' and (name in ds_siblings or (ria_remote_name and ria_remote_name in ds_siblings)):
             yield get_status_dict(
                 status='notneeded',
                 message="Skipped on existing sibling",
@@ -298,24 +298,24 @@ class CreateSiblingRia(Interface):
             skip = True
 
         if not skip:
-            lgr.info("create sibling{} '{}'{} ...".format('s' if ria_remote else '',
+            lgr.info("create sibling{} '{}'{} ...".format('s' if ria_remote_name else '',
                                                           name,
-                                                          " and '{}'".format(ria_remote) if ria_remote else '',
+                                                          " and '{}'".format(ria_remote_name) if ria_remote_name else '',
                                                           ))
             if not no_ria_remote:
-                lgr.debug('init special remote {}'.format(ria_remote))
+                lgr.debug('init special remote {}'.format(ria_remote_name))
                 ria_remote_options = ['type=external',
                                       'externaltype=ria',
                                       'encryption=none',
                                       'autoenable=true']
                 try:
-                    ds.repo.init_remote(ria_remote, options=ria_remote_options)
+                    ds.repo.init_remote(ria_remote_name, options=ria_remote_options)
                 except CommandError as e:
                     if existing in ['replace', 'reconfigure'] and 'git-annex: There is already a special remote named' in e.stderr:
                         # run enableremote instead
-                        lgr.debug("special remote '%s' already exists. Run enableremote instead.", ria_remote)
+                        lgr.debug("special remote '%s' already exists. Run enableremote instead.", ria_remote_name)
                         # TODO: Use AnnexRepo.enable_remote (which needs to get `options` first)
-                        cmd = ['git', 'annex', 'enableremote', ria_remote] + ria_remote_options
+                        cmd = ['git', 'annex', 'enableremote', ria_remote_name] + ria_remote_options
                         subprocess.run(cmd, cwd=quote_cmdlinearg(ds.repo.path))
                     else:
                         yield get_status_dict(
@@ -335,7 +335,7 @@ class CreateSiblingRia(Interface):
                 #       - this leads to the third option: Have that creation routine importable and callable from
                 #         ria-remote package without the need to actually instantiate a RIARemote object
                 lgr.debug("initializing object store")
-                ds.repo.fsck(remote=ria_remote, fast=True, annex_options=['--exclude=*/*'])
+                ds.repo.fsck(remote=ria_remote_name, fast=True, annex_options=['--exclude=*/*'])
 
             # 2. create a bare repository in-store:
             # determine layout locations
@@ -397,7 +397,7 @@ class CreateSiblingRia(Interface):
                 if ssh_host
                 else str(repo_path),
                 recursive=False,
-                publish_depends=ria_remote,  # Note, that this should be None if no_ria_remote was given
+                publish_depends=ria_remote_name,  # Note, that this should be None if no_ria_remote was given
                 result_renderer=None,
                 fetch=False
             )
@@ -415,7 +415,7 @@ class CreateSiblingRia(Interface):
                 todo_subs = {r['path'] for r in ds.siblings(result_renderer=None,
                                                             recursive=recursive,
                                                             recursion_limit=recursion_limit)
-                             if r['name'] not in [name, ria_remote]}
+                             if r['name'] not in [name, ria_remote_name]}
             else:
                 todo_subs = ds.subdatasets(fulfilled=True,
                                            recursive=True,
@@ -426,7 +426,7 @@ class CreateSiblingRia(Interface):
                 yield from CreateSiblingRia.__call__(url=url,
                                                      name=name,
                                                      dataset=subds,
-                                                     ria_remote=ria_remote,
+                                                     ria_remote_name=ria_remote_name,
                                                      existing=existing,
                                                      post_update_hook=post_update_hook,
                                                      no_ria_remote=no_ria_remote,

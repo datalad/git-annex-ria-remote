@@ -302,6 +302,15 @@ class CreateSiblingRia(Interface):
                                                           name,
                                                           " and '{}'".format(ria_remote_name) if ria_remote_name else '',
                                                           ))
+            if ssh_host:
+                from datalad import ssh_manager
+                ssh = ssh_manager.get_connection(ssh_host, use_remote_annex_bundle=False)
+                ssh.open()
+
+            # determine layout locations
+            # TODO: This is here for repo_path only. Actually included in target_props['giturl'], but not easily
+            #       accessible.
+            repo_path, _, _ = RIARemote.get_layout_locations(base_path, ds.id)
             if not no_ria_remote:
                 lgr.debug('init special remote {}'.format(ria_remote_name))
                 ria_remote_options = ['type=external',
@@ -336,12 +345,58 @@ class CreateSiblingRia(Interface):
                 #         ria-remote package without the need to actually instantiate a RIARemote object
                 lgr.debug("initializing object store")
                 ds.repo.fsck(remote=ria_remote_name, fast=True, annex_options=['--exclude=*/*'])
+            else:
+                # with no special remote we currently need to create the required directories
+                # TODO: This should be cleaner once we have access to the special remote's RemoteIO classes without
+                #       talking via annex
+                if ssh_host:
+                    try:
+                        stdout, stderr = ssh('test -e {repo}'.format(repo=quote_cmdlinearg(str(repo_path))))
+                        exists = True
+                    except CommandError as e:
+                        exists = False
+                    if exists:
+                        if existing == 'skip':
+                            # 1. not rendered by default
+                            # 2. message doesn't show up in ultimate result record as shown by -f json_pp
+                            yield get_status_dict(
+                                status='notneeded',
+                                message="Skipped on existing remote directory {}".format(repo_path),
+                                **res_kwargs
+                            )
+                            skip = True
+                        elif existing in ['error', 'reconfigure']:
+                            yield get_status_dict(
+                                status='error',
+                                message="remote directory {} already exists.".format(repo_path),
+                                **res_kwargs
+                            )
+                            return
+                        elif existing == 'replace':
+                            ssh('chmod u+w -R {}'.format(quote_cmdlinearg(str(repo_path))))
+                            ssh('rm -rf {}'.format(quote_cmdlinearg(str(repo_path))))
+                    if not skip:
+                        ssh('mkdir -p {}'.format(quote_cmdlinearg(str(repo_path))))
+                else:
+                    if repo_path.exists():
+                        if existing == 'skip':
+                            skip = True
+                        elif existing in ['error', 'reconfigure']:
+                            yield get_status_dict(
+                                status='error',
+                                message="remote directory {} already exists.".format(repo_path),
+                                **res_kwargs
+                            )
+                            return
+                        elif existing == 'replace':
+                            from datalad.utils import rmtree
+                            rmtree(repo_path)
+                    if not skip:
+                        repo_path.mkdir(parents=True)
+
+        if not skip:  # Note, that this could have changed since last tested due to existing remote dir
 
             # 2. create a bare repository in-store:
-            # determine layout locations
-            # TODO: This is here for repo_path only. Actually included in target_props['giturl'], but not easily
-            #       accessible.
-            repo_path, _, _ = RIARemote.get_layout_locations(base_path, ds.id)
 
             lgr.debug("init bare repository")
             # TODO: we should prob. check whether it's there already. How?
@@ -353,9 +408,6 @@ class CreateSiblingRia(Interface):
                 chgrp_cmd = "chgrp -R {} {}".format(quote_cmdlinearg(str(group)), quote_cmdlinearg(str(repo_path)))
 
             if ssh_host:
-                from datalad import ssh_manager
-                ssh = ssh_manager.get_connection(ssh_host, use_remote_annex_bundle=False)
-                ssh.open()
                 ssh('cd {rootdir} && git init --bare{shared}'.format(
                     rootdir=quote_cmdlinearg(str(repo_path)),
                     shared=" --shared='{}'".format(quote_cmdlinearg(shared)) if shared else ''

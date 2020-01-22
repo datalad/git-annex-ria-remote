@@ -46,7 +46,7 @@ from datalad.support.exceptions import (
     CommandError
 )
 from datalad.support.network import (
-    RI
+    URL
 )
 from datalad.support.gitrepo import (
     GitRepo
@@ -230,14 +230,14 @@ class CreateSiblingRia(Interface):
         # parse target URL
         # Note: For python API we should be able to deal with RI and its
         # subclasses. However, currently quite a dance needed (see below)
-        src_url_ri = RI(url) if not isinstance(url, RI) else url
+        src_url_ri = URL(url) if not isinstance(url, URL) else url
         if src_url_ri.fragment:
-            # TODO: This is still somewhat fragile. If the given dataset id in
-            # fragment matches, it's actually fine.
-            # But then: What if additional things are given (like @somebranch)?
-            # However, ideally we expect no fragment at all.
-            lgr.warning("Ignoring unexpected URL fragment '%s'."
-                        % src_url_ri.fragment)
+            yield get_status_dict(
+                status='error',
+                message="Unexpected URL fragment '%s'." % src_url_ri.fragment,
+                **res_kwargs
+            )
+            return
 
         # check special remote config:
         base_path = src_url_ri.path
@@ -265,7 +265,7 @@ class CreateSiblingRia(Interface):
         # That's why we read base_path before
         # (as the RI's .path will be appended by the actual repo path
         # afterwards):
-        target_props = decode_source_spec(src_url_ri, cfg=ds.config)
+        target_props = decode_source_spec(src_url_ri.as_str(), cfg=ds.config)
         if target_props['type'] != 'ria':
             raise ValueError(
                 "Not a valid RIA URL: %s. Expected: "

@@ -1,2 +1,2 @@
 nose
-git+https://github.com/datalad/datalad.git@master
+git+http://github.com/bpoldrack/datalad.git@collect-core-pieces-ria

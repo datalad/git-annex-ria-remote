@@ -578,14 +578,17 @@ class RIARemote(SpecialRemote):
         name = self.annex.getconfig('name')
         # get store url:
         self.ria_store_url = self.annex.getconfig('url')
-        url_cfgs = dict()
-        for line in _get_gitcfg(gitdir, "url.*", regex=True).splitlines():
-            k, v = line.split()
-            url_cfgs[k] = v
-        url = rewrite_url(url_cfgs, self.ria_store_url)
-        url_ri = URL(url)
-        self.storage_host = url_ri.hostname
-        self.objtree_base_path = url_ri.path
+        if self.ria_store_url:
+            url_cfgs = dict()
+            url_cfgs_raw = _get_gitcfg(gitdir, "url.*", regex=True)
+            if url_cfgs_raw:
+                for line in url_cfgs_raw.splitlines():
+                    k, v = line.split()
+                    url_cfgs[k] = v
+            url = rewrite_url(url_cfgs, self.ria_store_url)
+            url_ri = URL(url)
+            self.storage_host = url_ri.hostname
+            self.objtree_base_path = url_ri.path
 
         self._load_cfg(gitdir, name)
 

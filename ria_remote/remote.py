@@ -587,7 +587,14 @@ class RIARemote(SpecialRemote):
                     url_cfgs[k] = v
             url = rewrite_url(url_cfgs, self.ria_store_url)
             url_ri = URL(url)
-            self.storage_host = url_ri.hostname
+            if not url_ri.scheme.startswith('ria+'):
+                raise RIARemoteError("Missing ria+ prefix in final URL: %s" % url)
+            if url_ri.fragment:
+                raise RIARemoteError("Unexpected fragment in RIA-store URL: %s" % url_ri.fragment)
+            protocol = url_ri.scheme[4:]
+            if protocol not in ['ssh', 'file']:
+                raise RIARemoteError("Unsupported protocol: %s" % protocol)
+            self.storage_host = url_ri.hostname if protocol == 'ssh' else None
             self.objtree_base_path = url_ri.path
 
         self._load_cfg(gitdir, name)

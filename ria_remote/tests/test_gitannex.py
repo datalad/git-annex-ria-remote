@@ -5,10 +5,12 @@ from datalad.tests.utils import with_tempfile
 
 from ria_remote.tests.utils import (
     skip_ssh,
+    skip_non_ssh,
     initexternalremote,
 )
 
 
+@skip_non_ssh  # superfluous in an SSH-run and annex-testremote is slow
 @with_tempfile(mkdir=True)
 @with_tempfile()
 def test_gitannex_localio(path, objtree):
@@ -23,6 +25,7 @@ def test_gitannex_localio(path, objtree):
     )
 
 
+@skip_non_ssh  # superfluous in an SSH-run and annex-testremote is slow
 @with_tempfile(mkdir=True)
 @with_tempfile()
 def test_gitannex_localio_url(path, objtree):

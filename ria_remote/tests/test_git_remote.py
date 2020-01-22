@@ -17,9 +17,11 @@ from datalad.tests.utils import (
 from ria_remote.tests.utils import (
     initexternalremote,
     populate_dataset,
+    skip_non_ssh
 )
 
 
+@skip_non_ssh  # superfluous in an SSH-run and annex-testremote is slow
 @with_tempfile(mkdir=True)
 @with_tempfile()
 def test_bare_git(origin, remote_base_path):

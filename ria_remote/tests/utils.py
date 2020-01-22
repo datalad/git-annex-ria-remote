@@ -83,3 +83,19 @@ def skip_ssh(func):
     return newfunc
 
 
+def skip_non_ssh(func):
+    """Skips non-SSH-based tests if environment variable RIA_TESTS_SSH was set
+
+    This is for test alternatives in order to blow runtime of SSH testing with tests that ran in other test builds.
+    """
+
+    check_not_generatorfunction(func)
+
+    @wraps(func)
+    @attr('skip_ssh')
+    def newfunc(*args, **kwargs):
+        if 'RIA_TESTS_SSH' in os.environ:
+            raise SkipTest("Disabled, since RIA_TESTS_SSH is set")
+        return func(*args, **kwargs)
+    return newfunc
+

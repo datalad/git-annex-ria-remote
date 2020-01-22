@@ -137,7 +137,8 @@ class CreateSiblingRia(Interface):
             If `recursive` is set, the same name will be used to label all
             the subdatasets' siblings. When creating a target dataset fails,
             no sibling is added""",
-            constraints=EnsureStr() | EnsureNone()),
+            constraints=EnsureStr() | EnsureNone(),
+            required=True),
         ria_remote_name=Parameter(
             args=("--ria-remote-name",),
             metavar="RIAREMOTE",

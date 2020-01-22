@@ -580,7 +580,7 @@ class RIARemote(SpecialRemote):
         self.ria_store_url = self.annex.getconfig('url')
         if self.ria_store_url:
             url_cfgs = dict()
-            url_cfgs_raw = _get_gitcfg(gitdir, "url.*", regex=True)
+            url_cfgs_raw = _get_gitcfg(gitdir, "^url.*", regex=True)
             if url_cfgs_raw:
                 for line in url_cfgs_raw.splitlines():
                     k, v = line.split()

@@ -50,11 +50,10 @@ def initexternalremote(repo, name, type, encryption=None, config=None):
 
 
 def setup_archive_remote(repo, archive_path):
-    cfg = {
-        'base-path': archive_path,
-    }
     if 'RIA_TESTS_SSH' in os.environ:
-        cfg['ssh-host'] = 'datalad-test'
+        cfg = {'url': 'ria+ssh://datalad-test{}'.format(archive_path)}
+    else:
+        cfg = {'url': 'ria+file://{}'.format(archive_path)}
     initexternalremote(repo, 'archive', 'ria', config=cfg)
 
 
@@ -83,4 +82,20 @@ def skip_ssh(func):
         return func(*args, **kwargs)
     return newfunc
 
+
+def skip_non_ssh(func):
+    """Skips non-SSH-based tests if environment variable RIA_TESTS_SSH was set
+
+    This is for test alternatives in order to blow runtime of SSH testing with tests that ran in other test builds.
+    """
+
+    check_not_generatorfunction(func)
+
+    @wraps(func)
+    @attr('skip_ssh')
+    def newfunc(*args, **kwargs):
+        if 'RIA_TESTS_SSH' in os.environ:
+            raise SkipTest("Disabled, since RIA_TESTS_SSH is set")
+        return func(*args, **kwargs)
+    return newfunc
 

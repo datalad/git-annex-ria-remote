@@ -45,9 +45,6 @@ from datalad.utils import (
 from datalad.support.exceptions import (
     CommandError
 )
-from datalad.support.network import (
-    URL
-)
 from datalad.support.gitrepo import (
     GitRepo
 )
@@ -68,15 +65,10 @@ class CreateSiblingRia(Interface):
 
     This creates a representation of a dataset in a ria-remote compliant
     storage location. For access to it two siblings are configured for the
-    dataset by default. A "regular" one and a storage-sibling (git-annex
+    dataset by default. A "regular" one and a RIA remote (git-annex
     special remote).  Furthermore, the former is configured to have a
-    publication dependency on the latter.
-
-    Note, that the RIA remote needs to be configured before, referring to the
-    name of the storage-sibling.  That is, access to it must be available via
-    the 'annex.ria-remote.<RIAREMOTE>.base-path' and optionally
-    'annex.ria-remote.<RIAREMOTE>.ssh-host' configs. Please note, that
-    RIAREMOTE is the name of the storage sibling!
+    publication dependency on the latter. If not given a default name for
+    the RIA remote is derived from the sibling's name by appending "-ria".
 
     The store's base path currently is expected to either:
 
@@ -145,7 +137,7 @@ class CreateSiblingRia(Interface):
         ria_remote_name=Parameter(
             args=("--ria-remote-name",),
             metavar="RIAREMOTE",
-            doc="""name of the RIA storage sibling (git-annex special remote).
+            doc="""name of the RIA remote (git-annex special remote).
             Must not be identical to NAME. By default NAME is appended with
             '-ria'""",
             constraints=EnsureStr() | EnsureNone()),
@@ -243,8 +235,10 @@ class CreateSiblingRia(Interface):
 
         base_path = Path(base_path)
 
-        # TODO: The following dance to figure git_url and repo_path as well as base_path and ssh_host above
-        # is highly redundant in what those functions are doing internally. This needs some centralized url parsing.
+        # TODO: The following dance to figure git_url and repo_path as well as
+        #       base_path and ssh_host above is highly redundant in what those
+        #       functions are doing internally. This needs some centralized url
+        #       parsing.
         #
         # append dataset id to url and use magic from clone-helper:
         full_url = url + '#{}'.format(ds.id)
@@ -331,7 +325,7 @@ class CreateSiblingRia(Interface):
                         options=ria_remote_options)
                 except CommandError as e:
                     if existing in ['replace', 'reconfigure'] \
-                            and 'git-annex: There is already a special remote named' \
+                            and 'git-annex: There is already a special remote' \
                             in e.stderr:
                         # run enableremote instead
                         lgr.debug(

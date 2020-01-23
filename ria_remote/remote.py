@@ -10,9 +10,6 @@ import subprocess
 import logging
 from functools import wraps
 
-from datalad.config import rewrite_url
-from datalad.support.network import URL
-
 lgr = logging.getLogger('ria_remote')
 
 # TODO
@@ -62,6 +59,54 @@ def _get_datalad_id(gitdir):
     else:
         dsid = dsid.strip()
     return dsid
+
+
+def verify_ria_url(url, gitdir):
+    """verify and decode ria url
+
+    expects a ria-URL pointing to a RIA store, applies rewrites and tries to decode potential host and base path for
+    the store from it. Additionally raises if `url` is considered invalid.
+
+    ria+ssh://somehost:/path/to/store
+    ria+file:///path/to/store
+
+    Parameters
+    ----------
+    url: str
+    gitdir: str
+
+    Raises
+    ------
+    ValueError
+
+    Returns
+    -------
+    tuple
+      (host, base-path)
+    """
+    from datalad.config import rewrite_url
+    from datalad.support.network import URL
+
+    if not url:
+        raise ValueError("Got no URL")
+
+    url_cfgs = dict()
+    url_cfgs_raw = _get_gitcfg(gitdir, "^url.*", regex=True)
+    if url_cfgs_raw:
+        for line in url_cfgs_raw.splitlines():
+            k, v = line.split()
+            url_cfgs[k] = v
+    url = rewrite_url(url_cfgs, url)
+    url_ri = URL(url)
+    if not url_ri.scheme.startswith('ria+'):
+        raise ValueError("Missing ria+ prefix in final URL: %s" % url)
+    if url_ri.fragment:
+        raise ValueError("Unexpected fragment in RIA-store URL: %s" % url_ri.fragment)
+    protocol = url_ri.scheme[4:]
+    if protocol not in ['ssh', 'file']:
+        raise ValueError("Unsupported protocol: %s" % protocol)
+
+    return url_ri.hostname if protocol == 'ssh' else None, url_ri.path
 
 
 class RemoteCommandFailedError(Exception):
@@ -579,23 +624,7 @@ class RIARemote(SpecialRemote):
         # get store url:
         self.ria_store_url = self.annex.getconfig('url')
         if self.ria_store_url:
-            url_cfgs = dict()
-            url_cfgs_raw = _get_gitcfg(gitdir, "^url.*", regex=True)
-            if url_cfgs_raw:
-                for line in url_cfgs_raw.splitlines():
-                    k, v = line.split()
-                    url_cfgs[k] = v
-            url = rewrite_url(url_cfgs, self.ria_store_url)
-            url_ri = URL(url)
-            if not url_ri.scheme.startswith('ria+'):
-                raise RIARemoteError("Missing ria+ prefix in final URL: %s" % url)
-            if url_ri.fragment:
-                raise RIARemoteError("Unexpected fragment in RIA-store URL: %s" % url_ri.fragment)
-            protocol = url_ri.scheme[4:]
-            if protocol not in ['ssh', 'file']:
-                raise RIARemoteError("Unsupported protocol: %s" % protocol)
-            self.storage_host = url_ri.hostname if protocol == 'ssh' else None
-            self.objtree_base_path = url_ri.path
+            self.storage_host, self.objtree_base_path = verify_ria_url(self.ria_store_url, gitdir)
 
         self._load_cfg(gitdir, name)
 

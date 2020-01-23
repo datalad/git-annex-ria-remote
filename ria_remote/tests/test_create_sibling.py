@@ -36,12 +36,6 @@ def test_invalid_calls(path):
     # same name for git- and special remote:
     assert_raises(ValueError, ds.create_sibling_ria, 'ria+file:///some/where', name='some', ria_remote_name='some')
 
-    # special remote not configured:
-    res = ds.create_sibling_ria('ria+file:///some/where', name='some', return_type='list', on_failure="ignore")
-    assert_result_count(res, 1,
-                        status='impossible',
-                        message="Missing required configuration 'annex.ria-remote.some-ria.base-path'")
-
 
 @with_tree({'ds': {'file1.txt': 'some'},
             'sub': {'other.txt': 'other'}})
@@ -49,22 +43,20 @@ def test_invalid_calls(path):
 @with_tempfile(mkdir=True)
 def _test_create_store(host, ds_path, base_path, clone_path):
 
-    # TODO: This is an issue. We are writing to ~/.gitconfig here. Override doesn't work, since RIARemote itself
-    #       (actually git-annex!) doesn't have access to it, so initremote will still fail.
-    #       => at least move cfg.set/unset into a decorator, so it doesn't remain when a test is failing.
-    cfg.set("annex.ria-remote.datastore-ria.base-path", base_path, where='global', reload=True)
-    cfg.set("annex.ria-remote.datastore-ria.ssh-host", host or '0', where='global', reload=True)
-
     ds = Dataset(ds_path).create(force=True)
     subds = ds.create('sub', force=True)
     ds.save(recursive=True)
     assert_repo_status(ds.path)
+    # TODO: This is an issue. We are writing to ~/.gitconfig here. Override doesn't work, since RIARemote itself
+    #       (actually git-annex!) doesn't have access to it, so initremote will still fail.
+    #       => at least move cfg.set/unset into a decorator, so it doesn't remain when a test is failing.
+    cfg.set('url.ria+{prot}://{host}{path}.insteadOf'.format(prot='ssh' if host else 'file',
+                                                             host=host if host else '',
+                                                             path=base_path),
+            'ria+ssh://test-store:', where='global')
 
     # don't specify special remote. By default should be git-remote + "-storage", which is what we configured
-    res = ds.create_sibling_ria("ria+{prot}://{host}{base}".format(prot='ssh' if host else 'file',
-                                                                   host=host if host else '',
-                                                                   base=base_path),
-                                "datastore")
+    res = ds.create_sibling_ria("ria+ssh://test-store:", "datastore")
     assert_result_count(res, 1, status='ok', action='create-sibling-ria')
     eq_(len(res), 1)
 
@@ -93,13 +85,8 @@ def _test_create_store(host, ds_path, base_path, clone_path):
                             1,
                             status='ok', action='get', path=op.join(installed_ds.path, 'ds', 'file1.txt'))
 
-    # now, again but recursive. force should deal with existing remotes in super
-    res = ds.create_sibling_ria("ria+{prot}://{host}{base}".format(prot='ssh' if host else 'file',
-                                                                   host=host if host else '',
-                                                                   base=base_path),
-                                "datastore",
-                                recursive=True,
-                                existing='replace')
+    # now, again but recursive.
+    res = ds.create_sibling_ria("ria+ssh://test-store:", "datastore", recursive=True, existing='replace')
     eq_(len(res), 2)
     assert_result_count(res, 2, status='ok', action="create-sibling-ria")
 
@@ -109,8 +96,10 @@ def _test_create_store(host, ds_path, base_path, clone_path):
     sub_siblings = subds.siblings(result_renderer=None)
     eq_({'datastore', 'datastore-ria', 'here'}, {s['name'] for s in sub_siblings})
 
-    cfg.unset("annex.ria-remote.datastore-ria.base-path", where='global', reload=True)
-    cfg.unset("annex.ria-remote.datastore-ria.ssh-host", where='global', reload=True)
+    cfg.unset('url.ria+{prot}://{host}{path}.insteadOf'.format(prot='ssh' if host else 'file',
+                                                               host=host if host else '',
+                                                               path=base_path),
+              where='global', reload=True)
 
 
 def test_create_simple():

@@ -54,7 +54,10 @@ from datalad.support.gitrepo import (
 from datalad.core.distributed.clone import (
     decode_source_spec
 )
-from ria_remote.remote import RIARemote
+from ria_remote.remote import (
+    RIARemote,
+    verify_ria_url
+)
 
 lgr = logging.getLogger('datalad.ria_remote.create_sibling_ria')
 
@@ -218,7 +221,7 @@ class CreateSiblingRia(Interface):
 
         if no_ria_remote and ria_remote_name:
             raise ValueError(
-                "no-ria-remote and ria-remote-name were given simultanously.")
+                "no-ria-remote and ria-remote-name were given simultaneously.")
 
         if not no_ria_remote and not ria_remote_name:
             ria_remote_name = "{}-ria".format(name)
@@ -228,64 +231,24 @@ class CreateSiblingRia(Interface):
             raise ValueError("sibling names must not be equal")
 
         # parse target URL
-        # Note: For python API we should be able to deal with RI and its
-        # subclasses. However, currently quite a dance needed (see below)
-        src_url_ri = URL(url) if not isinstance(url, URL) else url
-        if src_url_ri.fragment:
+        try:
+            ssh_host, base_path = verify_ria_url(url, ds.repo.dot_git)
+        except ValueError as e:
             yield get_status_dict(
                 status='error',
-                message="Unexpected URL fragment '%s'." % src_url_ri.fragment,
+                message=str(e),
                 **res_kwargs
             )
             return
-
-        # check special remote config:
-        base_path = src_url_ri.path
-        # if not base_path:
-        #   TODO: consider annexconfig the same way the special remote does
-        #   (in-dataset special remote config)
-        #   base_path = ds.config.get(
-        #       "annex.ria-remote.{}.base-path".format(ria_sibling), None)
-        if not no_ria_remote and not ds.config.get(
-                "annex.ria-remote.{}.base-path".format(ria_remote_name), None):
-            yield get_status_dict(
-                status='impossible',
-                message="Missing required configuration "
-                "'annex.ria-remote.{}.base-path'".format(ria_remote_name),
-                **res_kwargs,
-            )
-            return
-
         base_path = Path(base_path)
 
+        # TODO: The following dance to figure git_url and repo_path as well as base_path and ssh_host above
+        # is highly redundant in what those functions are doing internally. This needs some centralized url parsing.
+        #
         # append dataset id to url and use magic from clone-helper:
-        # TODO: This dance in URL parsing should be centralized in datalad-core
-        src_url_ri.fragment = ds.id
-        # Note: Attention, decode_source_spec changes the passed RI.
-        # That's why we read base_path before
-        # (as the RI's .path will be appended by the actual repo path
-        # afterwards):
-        target_props = decode_source_spec(src_url_ri.as_str(), cfg=ds.config)
-        if target_props['type'] != 'ria':
-            raise ValueError(
-                "Not a valid RIA URL: %s. Expected: "
-                "'ria+[http|ssh|file|...]://[base-path]'")
-        # TODO: What sanity checks do we need?
-        # - ria+ scheme really required? If not, ds.id in fragment doesn't do
-        #   anything. Can still be valid? How then to distinguish base-path
-        #   from repo-path?
-
-        ssh_host = src_url_ri.hostname
-        # if not ssh_host:
-        #    ssh_host = ds.config.get(
-        #       "annex.ria-remote.{}.ssh-host".format(ria_sibling), None)
-        if not ssh_host:
-            lgr.info(
-                "No SSH-Host configured for {}. "
-                "Assume local RIA store at {}.".format(
-                    ria_remote_name, base_path))
-        if ssh_host == '0':
-            ssh_host = None
+        full_url = url + '#{}'.format(ds.id)
+        git_url = decode_source_spec(full_url, cfg=ds.config)['giturl']
+        repo_path, _, _ = RIARemote.get_layout_locations(base_path, ds.id)
 
         # Query existing siblings upfront in order to fail early on
         # existing=='error', since misconfiguration (particularly of special
@@ -354,15 +317,13 @@ class CreateSiblingRia(Interface):
                 ssh.open()
 
             # determine layout locations
-            # TODO: This is here for repo_path only. Actually included in target
-            #       _props['giturl'], but not easily accessible.
-            repo_path, _, _ = RIARemote.get_layout_locations(base_path, ds.id)
             if not no_ria_remote:
                 lgr.debug('init special remote {}'.format(ria_remote_name))
                 ria_remote_options = ['type=external',
                                       'externaltype=ria',
                                       'encryption=none',
-                                      'autoenable=true']
+                                      'autoenable=true',
+                                      'url={}'.format(url)]
                 try:
                     ds.repo.init_remote(
                         ria_remote_name,
@@ -541,7 +502,7 @@ class CreateSiblingRia(Interface):
             ds.siblings(
                 'configure',
                 name=name,
-                url=target_props['giturl']
+                url=git_url
                 if ssh_host
                 else str(repo_path),
                 recursive=False,

@@ -12,9 +12,11 @@ echo "DEBUG: test connection to localhost ..."
 ssh -v localhost exit
 echo "DEBUG: test connection to datalad-test ..."
 ssh -v datalad-test exit
-
+echo "DEBUG: ~/.ssh/config:"
+cat ~/.ssh/config
+echo "DEBUG: /etc/ssh/sshd_config:"
+cat /etc/ssh/sshd_config
+echo "DEBUG: ~/.ssh/authorized_keys"
+cat ~/.ssh/authorized_keys
 # tmp: don't run the actual tests:
 # exit 1
-
-
-

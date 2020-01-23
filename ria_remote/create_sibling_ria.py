@@ -222,6 +222,9 @@ class CreateSiblingRia(Interface):
             # leads to unresolvable, circular dependency with publish-depends
             raise ValueError("sibling names must not be equal")
 
+        if not isinstance(url, str):
+            raise TypeError("url is not a string, but %s" % type(url))
+
         # parse target URL
         try:
             ssh_host, base_path = verify_ria_url(url, str(ds.repo.dot_git))

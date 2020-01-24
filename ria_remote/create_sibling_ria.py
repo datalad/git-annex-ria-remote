@@ -522,20 +522,10 @@ class CreateSiblingRia(Interface):
             # recursion when querying for them and _no_recursion with the
             # actual call. Theoretically this can be parallelized.
 
-            if existing == 'skip':
-                todo_subs = {
-                    r['path']
-                    for r in ds.siblings(result_renderer=None,
-                                         recursive=recursive,
-                                         recursion_limit=recursion_limit)
-                    if r['name'] not in [name, ria_remote_name]
-                }
-            else:
-                todo_subs = ds.subdatasets(fulfilled=True,
-                                           recursive=True,
-                                           recursion_limit=recursion_limit,
-                                           result_xfm='datasets')
-
+            todo_subs = ds.subdatasets(fulfilled=True,
+                                       recursive=True,
+                                       recursion_limit=recursion_limit,
+                                       result_xfm='datasets')
             for subds in todo_subs:
                 yield from CreateSiblingRia.__call__(
                     url=url,

@@ -202,7 +202,6 @@ class CreateSiblingRia(Interface):
                  recursion_limit=None
                  ):
 
-        # TODO: is check_installed actually required?
         ds = require_dataset(
             dataset, check_installed=True, purpose='create sibling RIA')
         res_kwargs = dict(
@@ -214,7 +213,7 @@ class CreateSiblingRia(Interface):
         if ds.repo.get_hexsha() is None or ds.id is None:
             raise RuntimeError(
                 "Repository at {} is not a DataLad dataset, "
-                "run 'datalad create' first.".format(ds.path))
+                "run 'datalad create [--force]' first.".format(ds.path))
 
         if not ria_remote and ria_remote_name:
             raise ValueError(

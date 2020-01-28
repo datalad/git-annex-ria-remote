@@ -6,7 +6,7 @@
 #   copyright and license terms.
 #
 # ## ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ##
-"""Create a sibling in a configured RIA store"""
+"""Create a sibling in a RIA store"""
 
 __docformat__ = 'restructuredtext'
 
@@ -122,34 +122,35 @@ class CreateSiblingRia(Interface):
             constraints=EnsureDataset() | EnsureNone()),
         url=Parameter(
             args=("url",),
-            metavar="URL",
-            doc="""""",
+            metavar="ria+<ssh|file>://<host>[/path]",
+            doc="""URL identifying the target RIA store and access protocol.
+            """,
             constraints=EnsureStr() | EnsureNone()),
         name=Parameter(
             args=('-s', '--name',),
             metavar='NAME',
-            doc="""sibling name to create for this publication target.
-            If `recursive` is set, the same name will be used to label all
-            the subdatasets' siblings. When creating a target dataset fails,
-            no sibling is added""",
+            doc="""Name of the sibling.
+            With `recursive`, the same name will be used to label all
+            the subdatasets' siblings.""",
             constraints=EnsureStr() | EnsureNone(),
             required=True),
         ria_remote_name=Parameter(
             args=("--ria-remote-name",),
-            metavar="RIAREMOTE",
-            doc="""name of the RIA remote (git-annex special remote).
-            Must not be identical to NAME. By default NAME is appended with
-            '-ria'""",
+            metavar="NAME",
+            doc="""Name of the RIA remote (a git-annex special remote).
+            Must not be identical to the sibling name. If not specified,
+            defaults to the sibling name plus a '-ria' suffix.""",
             constraints=EnsureStr() | EnsureNone()),
         post_update_hook=Parameter(
             args=("--post-update-hook",),
-            doc="""Enable git's default post-update-hook on the remote end""",
+            doc="""Enable git's default post-update-hook for the created
+            sibling.""",
             action="store_true"),
         shared=Parameter(
             args=("--shared",),
             metavar='{false|true|umask|group|all|world|everybody|0xxx}',
-            doc="""if given, configures the access permissions on the server
-            for multi-users (this could include access by a webserver!).
+            doc="""If given, configures the permissions in the
+            RIA store for multi-users access.
             Possible values for this option are identical to those of
             `git init --shared` and are described in its documentation.""",
             constraints=EnsureStr() | EnsureBool() | EnsureNone()),
@@ -157,21 +158,24 @@ class CreateSiblingRia(Interface):
             args=("--group",),
             metavar="GROUP",
             doc="""Filesystem group for the repository. Specifying the group is
-            particularly important when [CMD: --shared=group CMD][PY:
-            shared="group" PY]""",
+            crucial when [CMD: --shared=group CMD][PY: shared="group" PY]""",
             constraints=EnsureStr() | EnsureNone()),
         ria_remote=Parameter(
             args=("--no-ria-remote",),
             dest='ria_remote',
-            doc="""Whether to establish a ria-remote in addition to the sibling
-            NAME.""",
+            doc="""Whether to establish remote indexed archive (RIA) capabilties
+            for the created sibling. If enabled, git-annex special remote access
+            will be configured to enable regular git-annex key storage, and
+            also retrieval of keys from (compressed) 7z archives that might be
+            provided by the dataset store. If disabled, git-annex is instructed
+            to ignore the sibling.""",
             action="store_false"),
         existing=Parameter(
             args=("--existing",),
             constraints=EnsureChoice(
                 'skip', 'replace', 'error', 'reconfigure'),
             metavar='MODE',
-            doc="""action to perform, if a sibling or ria-remote is already
+            doc="""Action to perform, if a sibling or ria-remote is already
             configured under the given name and/or a target already exists.
             In this case, a dataset can be skipped ('skip'), an existing target
             directory be forcefully re-initialized, and the sibling

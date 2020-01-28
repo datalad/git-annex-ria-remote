@@ -216,8 +216,9 @@ class CreateSiblingRia(Interface):
                 "run 'datalad create [--force]' first.".format(ds.path))
 
         if not ria_remote and ria_remote_name:
-            raise ValueError(
-                "no-ria-remote and ria-remote-name were given simultaneously.")
+            lgr.warning(
+                "RIA remote setup disabled, but a ria-remote name was provided"
+            )
 
         if ria_remote and not ria_remote_name:
             ria_remote_name = "{}-ria".format(name)

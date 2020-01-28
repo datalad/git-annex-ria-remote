@@ -370,7 +370,6 @@ def _create_sibling_ria(
 
     ds_siblings = [r['name'] for r in ds.siblings(result_renderer=None)]
     # Figure whether we are supposed to skip this very dataset
-    skip = False
     if existing == 'skip' and (
             name in ds_siblings or (
                 ria_remote_name and ria_remote_name in ds_siblings)):
@@ -379,220 +378,227 @@ def _create_sibling_ria(
             message="Skipped on existing sibling",
             **res_kwargs
         )
-        skip = True
+        # if we skip here, nothing else can change that decision further
+        # down
+        return
 
-    if not skip:
-        lgr.info("create sibling{} '{}'{} ...".format(
-            's' if ria_remote_name else '',
-            name,
-            " and '{}'".format(ria_remote_name) if ria_remote_name else '',
-        ))
+    # we might learn that some processing (remote repo creation is
+    # not desired)
+    skip = False
+
+    lgr.info("create sibling{} '{}'{} ...".format(
+        's' if ria_remote_name else '',
+        name,
+        " and '{}'".format(ria_remote_name) if ria_remote_name else '',
+    ))
+    if ssh_host:
+        from datalad import ssh_manager
+        ssh = ssh_manager.get_connection(
+            ssh_host,
+            use_remote_annex_bundle=False)
+        ssh.open()
+
+    # determine layout locations
+    if ria_remote:
+        lgr.debug('init special remote {}'.format(ria_remote_name))
+        ria_remote_options = ['type=external',
+                              'externaltype=ria',
+                              'encryption=none',
+                              'autoenable=true',
+                              'url={}'.format(url)]
+        try:
+            ds.repo.init_remote(
+                ria_remote_name,
+                options=ria_remote_options)
+        except CommandError as e:
+            if existing in ['replace', 'reconfigure'] \
+                    and 'git-annex: There is already a special remote' \
+                    in e.stderr:
+                # run enableremote instead
+                lgr.debug(
+                    "special remote '%s' already exists. "
+                    "Run enableremote instead.",
+                    ria_remote_name)
+                # TODO: Use AnnexRepo.enable_remote (which needs to get
+                #       `options` first)
+                cmd = [
+                    'git',
+                    'annex',
+                    'enableremote',
+                    ria_remote_name] + ria_remote_options
+                subprocess.run(cmd, cwd=quote_cmdlinearg(ds.repo.path))
+            else:
+                yield get_status_dict(
+                    status='error',
+                    message="initremote failed.\nstdout: %s\nstderr: %s"
+                    % (e.stdout, e.stderr),
+                    **res_kwargs
+                )
+                return
+
+        # 1. create remote object store:
+        # Note: All it actually takes is to trigger the special
+        # remote's `prepare` method once.
+        # ATM trying to achieve that by invoking a minimal fsck.
+        # TODO: - It's probably faster to actually talk to the special
+        #         remote (i.e. pretending to be annex and use
+        #         the protocol to send PREPARE)
+        #       - Alternatively we can create the remote directory and
+        #         ria version file directly, but this means
+        #         code duplication that then needs to be kept in sync
+        #         with ria-remote implementation.
+        #       - this leads to the third option: Have that creation
+        #         routine importable and callable from
+        #         ria-remote package without the need to actually
+        #         instantiate a RIARemote object
+        lgr.debug("initializing object store")
+        ds.repo.fsck(
+            remote=ria_remote_name,
+            fast=True,
+            annex_options=['--exclude=*/*'])
+    else:
+        # with no special remote we currently need to create the
+        # required directories
+        # TODO: This should be cleaner once we have access to the
+        #       special remote's RemoteIO classes without
+        #       talking via annex
         if ssh_host:
-            from datalad import ssh_manager
-            ssh = ssh_manager.get_connection(
-                ssh_host,
-                use_remote_annex_bundle=False)
-            ssh.open()
-
-        # determine layout locations
-        if ria_remote:
-            lgr.debug('init special remote {}'.format(ria_remote_name))
-            ria_remote_options = ['type=external',
-                                  'externaltype=ria',
-                                  'encryption=none',
-                                  'autoenable=true',
-                                  'url={}'.format(url)]
             try:
-                ds.repo.init_remote(
-                    ria_remote_name,
-                    options=ria_remote_options)
+                stdout, stderr = ssh(
+                    'test -e {repo}'.format(
+                        repo=quote_cmdlinearg(str(repo_path))))
+                exists = True
             except CommandError as e:
-                if existing in ['replace', 'reconfigure'] \
-                        and 'git-annex: There is already a special remote' \
-                        in e.stderr:
-                    # run enableremote instead
-                    lgr.debug(
-                        "special remote '%s' already exists. "
-                        "Run enableremote instead.",
-                        ria_remote_name)
-                    # TODO: Use AnnexRepo.enable_remote (which needs to get
-                    #       `options` first)
-                    cmd = [
-                        'git',
-                        'annex',
-                        'enableremote',
-                        ria_remote_name] + ria_remote_options
-                    subprocess.run(cmd, cwd=quote_cmdlinearg(ds.repo.path))
-                else:
+                exists = False
+            if exists:
+                if existing == 'skip':
+                    # 1. not rendered by default
+                    # 2. message doesn't show up in ultimate result
+                    #    record as shown by -f json_pp
+                    yield get_status_dict(
+                        status='notneeded',
+                        message="Skipped on existing remote "
+                        "directory {}".format(repo_path),
+                        **res_kwargs
+                    )
+                    skip = True
+                elif existing in ['error', 'reconfigure']:
                     yield get_status_dict(
                         status='error',
-                        message="initremote failed.\nstdout: %s\nstderr: %s"
-                        % (e.stdout, e.stderr),
+                        message="remote directory {} already "
+                        "exists.".format(repo_path),
                         **res_kwargs
                     )
                     return
-
-            # 1. create remote object store:
-            # Note: All it actually takes is to trigger the special
-            # remote's `prepare` method once.
-            # ATM trying to achieve that by invoking a minimal fsck.
-            # TODO: - It's probably faster to actually talk to the special
-            #         remote (i.e. pretending to be annex and use
-            #         the protocol to send PREPARE)
-            #       - Alternatively we can create the remote directory and
-            #         ria version file directly, but this means
-            #         code duplication that then needs to be kept in sync
-            #         with ria-remote implementation.
-            #       - this leads to the third option: Have that creation
-            #         routine importable and callable from
-            #         ria-remote package without the need to actually
-            #         instantiate a RIARemote object
-            lgr.debug("initializing object store")
-            ds.repo.fsck(
-                remote=ria_remote_name,
-                fast=True,
-                annex_options=['--exclude=*/*'])
-        else:
-            # with no special remote we currently need to create the
-            # required directories
-            # TODO: This should be cleaner once we have access to the
-            #       special remote's RemoteIO classes without
-            #       talking via annex
-            if ssh_host:
-                try:
-                    stdout, stderr = ssh(
-                        'test -e {repo}'.format(
-                            repo=quote_cmdlinearg(str(repo_path))))
-                    exists = True
-                except CommandError as e:
-                    exists = False
-                if exists:
-                    if existing == 'skip':
-                        # 1. not rendered by default
-                        # 2. message doesn't show up in ultimate result
-                        #    record as shown by -f json_pp
-                        yield get_status_dict(
-                            status='notneeded',
-                            message="Skipped on existing remote "
-                            "directory {}".format(repo_path),
-                            **res_kwargs
-                        )
-                        skip = True
-                    elif existing in ['error', 'reconfigure']:
-                        yield get_status_dict(
-                            status='error',
-                            message="remote directory {} already "
-                            "exists.".format(repo_path),
-                            **res_kwargs
-                        )
-                        return
-                    elif existing == 'replace':
-                        ssh('chmod u+w -R {}'.format(
-                            quote_cmdlinearg(str(repo_path))))
-                        ssh('rm -rf {}'.format(
-                            quote_cmdlinearg(str(repo_path))))
-                if not skip:
-                    ssh('mkdir -p {}'.format(
+                elif existing == 'replace':
+                    ssh('chmod u+w -R {}'.format(
                         quote_cmdlinearg(str(repo_path))))
-            else:
-                if repo_path.exists():
-                    if existing == 'skip':
-                        skip = True
-                    elif existing in ['error', 'reconfigure']:
-                        yield get_status_dict(
-                            status='error',
-                            message="remote directory {} already "
-                            "exists.".format(repo_path),
-                            **res_kwargs
-                        )
-                        return
-                    elif existing == 'replace':
-                        from datalad.utils import rmtree
-                        rmtree(repo_path)
-                if not skip:
-                    repo_path.mkdir(parents=True)
+                    ssh('rm -rf {}'.format(
+                        quote_cmdlinearg(str(repo_path))))
+            if not skip:
+                ssh('mkdir -p {}'.format(
+                    quote_cmdlinearg(str(repo_path))))
+        else:
+            if repo_path.exists():
+                if existing == 'skip':
+                    skip = True
+                elif existing in ['error', 'reconfigure']:
+                    yield get_status_dict(
+                        status='error',
+                        message="remote directory {} already "
+                        "exists.".format(repo_path),
+                        **res_kwargs
+                    )
+                    return
+                elif existing == 'replace':
+                    from datalad.utils import rmtree
+                    rmtree(repo_path)
+            if not skip:
+                repo_path.mkdir(parents=True)
 
     # Note, that this could have changed since last tested due to existing
     # remote dir
-    if not skip:
-        # 2. create a bare repository in-store:
+    if skip:
+        return
 
-        lgr.debug("init bare repository")
-        # TODO: we should prob. check whether it's there already. How?
-        # Note: like the special remote itself, we assume local FS if no
-        # SSH host is specified
-        disabled_hook = repo_path / 'hooks' / 'post-update.sample'
-        enabled_hook = repo_path / 'hooks' / 'post-update'
+    # 2. create a bare repository in-store:
+
+    lgr.debug("init bare repository")
+    # TODO: we should prob. check whether it's there already. How?
+    # Note: like the special remote itself, we assume local FS if no
+    # SSH host is specified
+    disabled_hook = repo_path / 'hooks' / 'post-update.sample'
+    enabled_hook = repo_path / 'hooks' / 'post-update'
+
+    if group:
+        chgrp_cmd = "chgrp -R {} {}".format(
+            quote_cmdlinearg(str(group)),
+            quote_cmdlinearg(str(repo_path)))
+
+    if ssh_host:
+        ssh('cd {rootdir} && git init --bare{shared}'.format(
+            rootdir=quote_cmdlinearg(str(repo_path)),
+            shared=" --shared='{}'".format(
+                quote_cmdlinearg(shared)) if shared else ''
+        ))
+        if post_update_hook:
+            ssh('mv {} {}'.format(quote_cmdlinearg(str(disabled_hook)),
+                                  quote_cmdlinearg(str(enabled_hook))))
 
         if group:
-            chgrp_cmd = "chgrp -R {} {}".format(
-                quote_cmdlinearg(str(group)),
-                quote_cmdlinearg(str(repo_path)))
-
-        if ssh_host:
-            ssh('cd {rootdir} && git init --bare{shared}'.format(
-                rootdir=quote_cmdlinearg(str(repo_path)),
+            # Either repository existed before or a new directory was
+            # created for it, set its group to a desired one if was
+            # provided with the same chgrp
+            ssh(chgrp_cmd)
+    else:
+        GitRepo(repo_path, create=True, bare=True,
                 shared=" --shared='{}'".format(
-                    quote_cmdlinearg(shared)) if shared else ''
-            ))
-            if post_update_hook:
-                ssh('mv {} {}'.format(quote_cmdlinearg(str(disabled_hook)),
-                                      quote_cmdlinearg(str(enabled_hook))))
+                    quote_cmdlinearg(shared)) if shared else None)
+        if post_update_hook:
+            disabled_hook.rename(enabled_hook)
+        if group:
+            # TODO; do we need a cwd here?
+            subprocess.run(chgrp_cmd, cwd=quote_cmdlinearg(ds.path))
 
-            if group:
-                # Either repository existed before or a new directory was
-                # created for it, set its group to a desired one if was
-                # provided with the same chgrp
-                ssh(chgrp_cmd)
-        else:
-            GitRepo(repo_path, create=True, bare=True,
-                    shared=" --shared='{}'".format(
-                        quote_cmdlinearg(shared)) if shared else None)
-            if post_update_hook:
-                disabled_hook.rename(enabled_hook)
-            if group:
-                # TODO; do we need a cwd here?
-                subprocess.run(chgrp_cmd, cwd=quote_cmdlinearg(ds.path))
+    # add a git remote to the bare repository
+    # Note: needs annex-ignore! Otherwise we might push into default
+    # annex/object tree instead of directory type tree with dirhash
+    # lower. This in turn would be an issue, if we want to pack the
+    # entire thing into an archive. Special remote will then not be
+    # able to access content in the "wrong" place within the archive
+    lgr.debug("set up git remote")
+    # TODO:
+    # - This sibings call results in "[WARNING] Failed to determine
+    #   if datastore carries annex."
+    #   (see https://github.com/datalad/datalad/issues/4028)
+    #   => for now have annex-ignore configured before. Evtl. Allow
+    #      configure/add to include that option
+    #      - additionally there's
+    #        https://github.com/datalad/datalad/issues/3989,
+    #        where datalad-siblings might hang forever
+    if name in ds_siblings:
+        # otherwise we should have skipped or failed before
+        assert existing in ['replace', 'reconfigure']
+    ds.config.set(
+        "remote.{}.annex-ignore".format(name),
+        value="true",
+        where="local")
+    ds.siblings(
+        'configure',
+        name=name,
+        url=git_url
+        if ssh_host
+        else str(repo_path),
+        recursive=False,
+        # Note, that this should be None if ria_remote was not set
+        publish_depends=ria_remote_name,
+        result_renderer=None,
+        # Note, that otherwise a subsequent publish will report
+        # "notneeded".
+        fetch=True
+    )
 
-        # add a git remote to the bare repository
-        # Note: needs annex-ignore! Otherwise we might push into default
-        # annex/object tree instead of directory type tree with dirhash
-        # lower. This in turn would be an issue, if we want to pack the
-        # entire thing into an archive. Special remote will then not be
-        # able to access content in the "wrong" place within the archive
-        lgr.debug("set up git remote")
-        # TODO:
-        # - This sibings call results in "[WARNING] Failed to determine
-        #   if datastore carries annex."
-        #   (see https://github.com/datalad/datalad/issues/4028)
-        #   => for now have annex-ignore configured before. Evtl. Allow
-        #      configure/add to include that option
-        #      - additionally there's
-        #        https://github.com/datalad/datalad/issues/3989,
-        #        where datalad-siblings might hang forever
-        if name in ds_siblings:
-            # otherwise we should have skipped or failed before
-            assert existing in ['replace', 'reconfigure']
-        ds.config.set(
-            "remote.{}.annex-ignore".format(name),
-            value="true",
-            where="local")
-        ds.siblings(
-            'configure',
-            name=name,
-            url=git_url
-            if ssh_host
-            else str(repo_path),
-            recursive=False,
-            # Note, that this should be None if ria_remote was not set
-            publish_depends=ria_remote_name,
-            result_renderer=None,
-            # Note, that otherwise a subsequent publish will report
-            # "notneeded".
-            fetch=True
-        )
-
-        yield get_status_dict(
-            status='ok',
-            **res_kwargs,
-        )
+    yield get_status_dict(
+        status='ok',
+        **res_kwargs,
+    )

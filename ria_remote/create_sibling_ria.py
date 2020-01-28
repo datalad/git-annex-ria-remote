@@ -53,9 +53,9 @@ from datalad.core.distributed.clone import (
     decode_source_spec
 )
 from datalad.log import log_progress
-from ria_remote.remote import (
-    RIARemote,
-    verify_ria_url
+from ria_remote.utils import (
+    get_layout_locations,
+    verify_ria_url,
 )
 
 lgr = logging.getLogger('datalad.ria_remote.create_sibling_ria')
@@ -361,13 +361,8 @@ def _create_sibling_ria(
         url + '#{}'.format(ds.id),
         cfg=ds.config
     )['giturl']
-    # TODO this is actually not guaranteed to be 100% valid forever.
-    # The point of this function was to help with changes in the
-    # layout version (repo-level), but the targeted store isn't actually
-    # queried for a version at this point, hence the local software
-    # installation decides independently
-    # Not an issue now, but might become one
-    repo_path, _, _ = RIARemote.get_layout_locations(base_path, ds.id)
+    # go for a v1 layout
+    repo_path, _, _ = get_layout_locations(1, base_path, ds.id)
 
     ds_siblings = [r['name'] for r in ds.siblings(result_renderer=None)]
     # Figure whether we are supposed to skip this very dataset

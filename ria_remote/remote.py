@@ -9,6 +9,10 @@ from shlex import quote as sh_quote
 import subprocess
 import logging
 from functools import wraps
+from ria_remote.utils import (
+    get_layout_locations,
+    verify_ria_url,
+)
 
 lgr = logging.getLogger('ria_remote')
 
@@ -59,52 +63,6 @@ def _get_datalad_id(gitdir):
     else:
         dsid = dsid.strip()
     return dsid
-
-
-def verify_ria_url(url, cfg):
-    """Verify and decode ria url
-
-    Expects a ria-URL pointing to a RIA store, applies rewrites and tries to
-    decode potential host and base path for the store from it. Additionally
-    raises if `url` is considered invalid.
-
-    ria+ssh://somehost:/path/to/store
-    ria+file:///path/to/store
-
-    Parameters
-    ----------
-    url : str
-      URL to verify an decode.
-    cfg : dict-like
-      Configuration settings for rewrite_url()
-
-    Raises
-    ------
-    ValueError
-
-    Returns
-    -------
-    tuple
-      (host, base-path)
-    """
-    from datalad.config import rewrite_url
-    from datalad.support.network import URL
-
-    if not url:
-        raise ValueError("Got no URL")
-
-    url = rewrite_url(cfg, url)
-    url_ri = URL(url)
-    if not url_ri.scheme.startswith('ria+'):
-        raise ValueError("Missing ria+ prefix in final URL: %s" % url)
-    if url_ri.fragment:
-        raise ValueError(
-            "Unexpected fragment in RIA-store URL: %s" % url_ri.fragment)
-    protocol = url_ri.scheme[4:]
-    if protocol not in ['ssh', 'file']:
-        raise ValueError("Unsupported protocol: %s" % protocol)
-
-    return url_ri.hostname if protocol == 'ssh' else None, url_ri.path
 
 
 class RemoteCommandFailedError(Exception):
@@ -936,12 +894,7 @@ class RIARemote(SpecialRemote):
 
     @staticmethod
     def get_layout_locations(base_path, dsid):
-        # Note: Changes to this method may require an update of RIARemote._layout_version
-
-        dsgit_dir = base_path / dsid[:3] / dsid[3:]
-        archive_dir = dsgit_dir / 'archives'
-        dsobj_dir = dsgit_dir / 'annex' / 'objects'
-        return dsgit_dir, archive_dir, dsobj_dir
+        return get_layout_locations(1, base_path, dsid)
 
     def _get_obj_location(self, key):
         # Note: Changes to this method may require an update of RIARemote._layout_version

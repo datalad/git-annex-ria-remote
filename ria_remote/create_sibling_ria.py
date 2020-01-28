@@ -40,7 +40,8 @@ from datalad.distribution.dataset import (
 )
 from datalad.utils import (
     Path,
-    quote_cmdlinearg
+    quote_cmdlinearg,
+    rmtree,
 )
 from datalad.support.exceptions import (
     CommandError
@@ -511,7 +512,6 @@ def _create_sibling_ria(
                     )
                     return
                 elif existing == 'replace':
-                    from datalad.utils import rmtree
                     rmtree(repo_path)
             if not skip:
                 repo_path.mkdir(parents=True)

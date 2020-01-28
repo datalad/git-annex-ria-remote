@@ -64,8 +64,9 @@ def _get_datalad_id(gitdir):
 def verify_ria_url(url, gitdir):
     """verify and decode ria url
 
-    expects a ria-URL pointing to a RIA store, applies rewrites and tries to decode potential host and base path for
-    the store from it. Additionally raises if `url` is considered invalid.
+    Expects a ria-URL pointing to a RIA store, applies rewrites and tries to
+    decode potential host and base path for the store from it. Additionally
+    raises if `url` is considered invalid.
 
     ria+ssh://somehost:/path/to/store
     ria+file:///path/to/store

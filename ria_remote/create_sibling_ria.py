@@ -51,6 +51,7 @@ from datalad.support.gitrepo import (
 from datalad.core.distributed.clone import (
     decode_source_spec
 )
+from datalad.log import log_progress
 from ria_remote.remote import (
     RIARemote,
     verify_ria_url
@@ -262,14 +263,33 @@ class CreateSiblingRia(Interface):
         #       local remotes with existence of the actual remote sibling
         #       in wording
         if existing == 'error':
+            # in recursive mode this check could take a substantial amount of
+            # time: employ a progress bar (or rather a counter, because we dont
+            # know the total in advance
+            pbar_id = 'check-siblings-{}'.format(id(ds))
+            log_progress(
+                lgr.info, pbar_id,
+                'Start checking pre-existing sibling configuration %s', ds,
+                label='Query siblings',
+                unit=' Siblings',
+            )
             # even if we have to fail, let's report all conflicting siblings
             # in subdatasets
             failed = False
             for r in ds.siblings(result_renderer=None,
                                  recursive=recursive,
                                  recursion_limit=recursion_limit):
+                log_progress(
+                    lgr.info, pbar_id,
+                    'Discovered sibling %s in dataset at %s',
+                    r['name'], r['path'],
+                    update=1,
+                    increment=True)
                 if not r['type'] == 'sibling' or r['status'] != 'ok':
-                    yield r
+                    # this is an internal status query that has not consequence
+                    # for the outside world. Be silent unless something useful
+                    # can be said
+                    #yield r
                     continue
                 if r['name'] == name:
                     res = get_status_dict(
@@ -291,6 +311,10 @@ class CreateSiblingRia(Interface):
                     failed = True
                     yield res
                     continue
+            log_progress(
+                lgr.info, pbar_id,
+                'Finished checking pre-existing sibling configuration %s', ds,
+            )
             if failed:
                 return
 

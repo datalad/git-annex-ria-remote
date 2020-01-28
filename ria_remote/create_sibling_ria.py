@@ -232,7 +232,7 @@ class CreateSiblingRia(Interface):
 
         # parse target URL
         try:
-            ssh_host, base_path = verify_ria_url(url, str(ds.repo.dot_git))
+            ssh_host, base_path = verify_ria_url(url, ds.config)
         except ValueError as e:
             yield get_status_dict(
                 status='error',

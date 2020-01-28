@@ -61,8 +61,8 @@ def _get_datalad_id(gitdir):
     return dsid
 
 
-def verify_ria_url(url, gitdir):
-    """verify and decode ria url
+def verify_ria_url(url, cfg):
+    """Verify and decode ria url
 
     Expects a ria-URL pointing to a RIA store, applies rewrites and tries to
     decode potential host and base path for the store from it. Additionally
@@ -73,8 +73,10 @@ def verify_ria_url(url, gitdir):
 
     Parameters
     ----------
-    url: str
-    gitdir: str
+    url : str
+      URL to verify an decode.
+    cfg : dict-like
+      Configuration settings for rewrite_url()
 
     Raises
     ------
@@ -91,18 +93,13 @@ def verify_ria_url(url, gitdir):
     if not url:
         raise ValueError("Got no URL")
 
-    url_cfgs = dict()
-    url_cfgs_raw = _get_gitcfg(gitdir, "^url.*", regex=True)
-    if url_cfgs_raw:
-        for line in url_cfgs_raw.splitlines():
-            k, v = line.split()
-            url_cfgs[k] = v
-    url = rewrite_url(url_cfgs, url)
+    url = rewrite_url(cfg, url)
     url_ri = URL(url)
     if not url_ri.scheme.startswith('ria+'):
         raise ValueError("Missing ria+ prefix in final URL: %s" % url)
     if url_ri.fragment:
-        raise ValueError("Unexpected fragment in RIA-store URL: %s" % url_ri.fragment)
+        raise ValueError(
+            "Unexpected fragment in RIA-store URL: %s" % url_ri.fragment)
     protocol = url_ri.scheme[4:]
     if protocol not in ['ssh', 'file']:
         raise ValueError("Unsupported protocol: %s" % protocol)
@@ -625,8 +622,20 @@ class RIARemote(SpecialRemote):
         # get store url:
         self.ria_store_url = self.annex.getconfig('url')
         if self.ria_store_url:
-            self.storage_host, self.objtree_base_path = verify_ria_url(self.ria_store_url, gitdir)
+            # support URL rewrite without talking to a DataLad ConfigManager
+            # Q is why? Why not use the config manager?
+            url_cfgs = dict()
+            url_cfgs_raw = _get_gitcfg(gitdir, "^url.*", regex=True)
+            if url_cfgs_raw:
+                for line in url_cfgs_raw.splitlines():
+                    k, v = line.split()
+                    url_cfgs[k] = v
+            self.storage_host, self.objtree_base_path = verify_ria_url(
+                self.ria_store_url,
+                url_cfgs,
+            )
 
+        # TODO duplicates call to `git-config` after RIA url rewrite
         self._load_cfg(gitdir, name)
 
         # for now still accept the configs, if no ria-URL is known:

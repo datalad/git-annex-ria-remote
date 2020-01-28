@@ -243,14 +243,15 @@ class CreateSiblingRia(Interface):
 
         base_path = Path(base_path)
 
-        # TODO: The following dance to figure git_url and repo_path as well as
-        #       base_path and ssh_host above is highly redundant in what those
-        #       functions are doing internally. This needs some centralized url
-        #       parsing.
-        #
         # append dataset id to url and use magic from clone-helper:
         full_url = url + '#{}'.format(ds.id)
         git_url = decode_source_spec(full_url, cfg=ds.config)['giturl']
+        # TODO this is actually not guaranteed to be 100% valid forever.
+        # The point of this function was to help with changes in the
+        # layout version (repo-level), but the targeted store isn't actually
+        # queried for a version at this point, hence the local software
+        # installation decides independently
+        # Not an issue now, but might become one
         repo_path, _, _ = RIARemote.get_layout_locations(base_path, ds.id)
 
         # Query existing siblings upfront in order to fail early on

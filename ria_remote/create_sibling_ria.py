@@ -231,30 +231,6 @@ class CreateSiblingRia(Interface):
         if not isinstance(url, str):
             raise TypeError("url is not a string, but %s" % type(url))
 
-        # parse target URL
-        try:
-            ssh_host, base_path = verify_ria_url(url, ds.config)
-        except ValueError as e:
-            yield get_status_dict(
-                status='error',
-                message=str(e),
-                **res_kwargs
-            )
-            return
-
-        base_path = Path(base_path)
-
-        # append dataset id to url and use magic from clone-helper:
-        full_url = url + '#{}'.format(ds.id)
-        git_url = decode_source_spec(full_url, cfg=ds.config)['giturl']
-        # TODO this is actually not guaranteed to be 100% valid forever.
-        # The point of this function was to help with changes in the
-        # layout version (repo-level), but the targeted store isn't actually
-        # queried for a version at this point, hence the local software
-        # installation decides independently
-        # Not an issue now, but might become one
-        repo_path, _, _ = RIARemote.get_layout_locations(base_path, ds.id)
-
         # Query existing siblings upfront in order to fail early on
         # existing=='error', since misconfiguration (particularly of special
         # remotes) only to fail in a subdataset later on with that config, can
@@ -321,12 +297,9 @@ class CreateSiblingRia(Interface):
         yield from _create_sibling_ria(
             ds,
             url,
-            git_url,
             name,
             ria_remote,
             ria_remote_name,
-            ssh_host,
-            repo_path,
             existing,
             shared,
             group,
@@ -345,12 +318,9 @@ class CreateSiblingRia(Interface):
                 yield from _create_sibling_ria(
                     subds,
                     url,
-                    git_url,
                     name,
                     ria_remote,
                     ria_remote_name,
-                    ssh_host,
-                    repo_path,
                     existing,
                     shared,
                     group,
@@ -361,18 +331,43 @@ class CreateSiblingRia(Interface):
 def _create_sibling_ria(
         ds,
         url,
-        git_url,
         name,
         ria_remote,
         ria_remote_name,
-        ssh_host,
-        repo_path,
         existing,
         shared,
         group,
         post_update_hook,
         res_kwargs):
+    # be safe across datasets
     res_kwargs = res_kwargs.copy()
+
+    # parse target URL
+    try:
+        ssh_host, base_path = verify_ria_url(url, ds.config)
+    except ValueError as e:
+        yield get_status_dict(
+            status='error',
+            message=str(e),
+            **res_kwargs
+        )
+        return
+
+    base_path = Path(base_path)
+
+    git_url = decode_source_spec(
+        # append dataset id to url and use magic from clone-helper:
+        url + '#{}'.format(ds.id),
+        cfg=ds.config
+    )['giturl']
+    # TODO this is actually not guaranteed to be 100% valid forever.
+    # The point of this function was to help with changes in the
+    # layout version (repo-level), but the targeted store isn't actually
+    # queried for a version at this point, hence the local software
+    # installation decides independently
+    # Not an issue now, but might become one
+    repo_path, _, _ = RIARemote.get_layout_locations(base_path, ds.id)
+
     ds_siblings = [r['name'] for r in ds.siblings(result_renderer=None)]
     # Figure whether we are supposed to skip this very dataset
     skip = False

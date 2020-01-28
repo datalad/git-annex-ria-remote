@@ -49,6 +49,8 @@ def _test_create_store(host, ds_path, base_path, clone_path):
     #       have access to it, so initremote will still fail.
     #       => at least move cfg.set/unset into a decorator, so it doesn't
     #       remain when a test is failing.
+    # TODO this should be wrapped in a decorator that performs the set/unset
+    # in a try-finally configuration
     cfg.set('url.ria+{prot}://{host}{path}.insteadOf'
             ''.format(prot='ssh' if host else 'file',
                       host=host if host else '',

@@ -160,11 +160,12 @@ class CreateSiblingRia(Interface):
             particularly important when [CMD: --shared=group CMD][PY:
             shared="group" PY]""",
             constraints=EnsureStr() | EnsureNone()),
-        no_ria_remote=Parameter(
+        ria_remote=Parameter(
             args=("--no-ria-remote",),
-            doc="""don't establish a ria-remote in addition to the sibling
+            dest='ria_remote',
+            doc="""Whether to establish a ria-remote in addition to the sibling
             NAME.""",
-            action="store_true"),
+            action="store_false"),
         existing=Parameter(
             args=("--existing",),
             constraints=EnsureChoice(
@@ -191,7 +192,7 @@ class CreateSiblingRia(Interface):
                  post_update_hook=False,
                  shared=None,
                  group=None,
-                 no_ria_remote=False,
+                 ria_remote=True,
                  existing='error',
                  recursive=False,
                  recursion_limit=None
@@ -211,14 +212,14 @@ class CreateSiblingRia(Interface):
                 "Repository at {} is not a DataLad dataset, "
                 "run 'datalad create' first.".format(ds.path))
 
-        if no_ria_remote and ria_remote_name:
+        if not ria_remote and ria_remote_name:
             raise ValueError(
                 "no-ria-remote and ria-remote-name were given simultaneously.")
 
-        if not no_ria_remote and not ria_remote_name:
+        if ria_remote and not ria_remote_name:
             ria_remote_name = "{}-ria".format(name)
 
-        if not no_ria_remote and name == ria_remote_name:
+        if ria_remote and name == ria_remote_name:
             # leads to unresolvable, circular dependency with publish-depends
             raise ValueError("sibling names must not be equal")
 
@@ -315,7 +316,7 @@ class CreateSiblingRia(Interface):
                 ssh.open()
 
             # determine layout locations
-            if not no_ria_remote:
+            if ria_remote:
                 lgr.debug('init special remote {}'.format(ria_remote_name))
                 ria_remote_options = ['type=external',
                                       'externaltype=ria',
@@ -504,7 +505,7 @@ class CreateSiblingRia(Interface):
                 if ssh_host
                 else str(repo_path),
                 recursive=False,
-                # Note, that this should be None if no_ria_remote was given
+                # Note, that this should be None if ria_remote was not set
                 publish_depends=ria_remote_name,
                 result_renderer=None,
                 # Note, that otherwise a subsequent publish will report
@@ -534,7 +535,7 @@ class CreateSiblingRia(Interface):
                     ria_remote_name=ria_remote_name,
                     existing=existing,
                     post_update_hook=post_update_hook,
-                    no_ria_remote=no_ria_remote,
+                    ria_remote=ria_remote,
                     shared=shared,
                     group=group,
                     recursive=False)

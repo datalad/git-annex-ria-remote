@@ -13,7 +13,6 @@ __docformat__ = 'restructuredtext'
 
 import logging
 import subprocess
-from pathlib import Path
 
 from datalad.interface.common_opts import (
     recursion_flag,
@@ -40,6 +39,7 @@ from datalad.distribution.dataset import (
     require_dataset,
 )
 from datalad.utils import (
+    Path,
     quote_cmdlinearg
 )
 from datalad.support.exceptions import (

@@ -9,13 +9,18 @@ from shlex import quote as sh_quote
 import subprocess
 import logging
 from functools import wraps
+from ria_remote.utils import (
+    get_layout_locations,
+    verify_ria_url,
+)
+
 lgr = logging.getLogger('ria_remote')
 
 # TODO
 # - make archive check optional
 
 
-def _get_gitcfg(gitdir, key, cfgargs=None):
+def _get_gitcfg(gitdir, key, cfgargs=None, regex=False):
     cmd = [
         'git',
         '--git-dir', gitdir,
@@ -23,7 +28,9 @@ def _get_gitcfg(gitdir, key, cfgargs=None):
     ]
     if cfgargs:
         cmd += cfgargs
-    cmd += ['--get', key]
+
+    cmd += ['--get-regexp'] if regex else ['--get']
+    cmd += [key]
     try:
         return subprocess.check_output(
             cmd,
@@ -550,12 +557,15 @@ class RIARemote(SpecialRemote):
         self.remote_obj_dir = None
 
     def _load_cfg(self, gitdir, name):
-        self.storage_host = _get_gitcfg(
-            gitdir, 'annex.ria-remote.{}.ssh-host'.format(name))
-        objtree_base_path = _get_gitcfg(
-            gitdir, 'annex.ria-remote.{}.base-path'.format(name))
-        self.objtree_base_path = objtree_base_path.strip() \
-            if objtree_base_path else objtree_base_path
+        # for now still accept the configs, if no ria-URL is known:
+        if not self.ria_store_url:
+            self.storage_host = _get_gitcfg(
+                gitdir, 'annex.ria-remote.{}.ssh-host'.format(name))
+
+            objtree_base_path = _get_gitcfg(
+                gitdir, 'annex.ria-remote.{}.base-path'.format(name))
+            self.objtree_base_path = objtree_base_path.strip() \
+                if objtree_base_path else objtree_base_path
         # Whether or not to force writing to the remote. Currently used to overrule write protection due to layout
         # version mismatch.
         self.force_write = _get_gitcfg(
@@ -565,29 +575,50 @@ class RIARemote(SpecialRemote):
         self.ignore_remote_config = _get_gitcfg(gitdir, 'annex.ria-remote.{}.ignore-remote-config'.format(name))
 
     def _verify_config(self, gitdir, fail_noid=True):
-        # try loading all needed info from git config
+        # try loading all needed info from (git) config
         name = self.annex.getconfig('name')
+        # get store url:
+        self.ria_store_url = self.annex.getconfig('url')
+        if self.ria_store_url:
+            # support URL rewrite without talking to a DataLad ConfigManager
+            # Q is why? Why not use the config manager?
+            url_cfgs = dict()
+            url_cfgs_raw = _get_gitcfg(gitdir, "^url.*", regex=True)
+            if url_cfgs_raw:
+                for line in url_cfgs_raw.splitlines():
+                    k, v = line.split()
+                    url_cfgs[k] = v
+            self.storage_host, self.objtree_base_path = verify_ria_url(
+                self.ria_store_url,
+                url_cfgs,
+            )
+
+        # TODO duplicates call to `git-config` after RIA url rewrite
         self._load_cfg(gitdir, name)
 
-        if not self.objtree_base_path:
-            self.objtree_base_path = self.annex.getconfig('base-path')
-        if not self.objtree_base_path:
-            raise RIARemoteError(
-                "No remote base path configured. "
-                "Specify `base-path` setting.")
+        # for now still accept the configs, if no ria-URL is known:
+        if not self.ria_store_url:
+            if not self.objtree_base_path:
+                self.objtree_base_path = self.annex.getconfig('base-path')
+            if not self.objtree_base_path:
+                raise RIARemoteError(
+                    "No remote base path configured. "
+                    "Specify `base-path` setting.")
 
         self.objtree_base_path = Path(self.objtree_base_path)
         if not self.objtree_base_path.is_absolute():
             raise RIARemoteError(
                 'Non-absolute object tree base path configuration')
 
-        # Note: Special value '0' is replaced by None only after checking the repository's annex config.
-        # This is to uniformly handle '0' and None later on, but let a user's config '0' overrule what's
-        # stored by git-annex.
-        if not self.storage_host:
-            self.storage_host = self.annex.getconfig('ssh-host')
-        elif self.storage_host == '0':
-            self.storage_host = None
+        # for now still accept the configs, if no ria-URL is known:
+        if not self.ria_store_url:
+            # Note: Special value '0' is replaced by None only after checking the repository's annex config.
+            # This is to uniformly handle '0' and None later on, but let a user's config '0' overrule what's
+            # stored by git-annex.
+            if not self.storage_host:
+                self.storage_host = self.annex.getconfig('ssh-host')
+            elif self.storage_host == '0':
+                self.storage_host = None
 
         # go look for an ID
         self.archive_id = self.annex.getconfig('archive-id')
@@ -595,6 +626,8 @@ class RIARemote(SpecialRemote):
             raise RIARemoteError(
                 "No archive ID configured. This should not happen.")
 
+        # TODO: This should prob. not be done! Would only have an effect if force-write was committed
+        #       annex-special-remote-config and this is likely a bad idea.
         if not self.force_write:
             self.force_write = self.annex.getconfig('force-write')
 
@@ -861,12 +894,7 @@ class RIARemote(SpecialRemote):
 
     @staticmethod
     def get_layout_locations(base_path, dsid):
-        # Note: Changes to this method may require an update of RIARemote._layout_version
-
-        dsgit_dir = base_path / dsid[:3] / dsid[3:]
-        archive_dir = dsgit_dir / 'archives'
-        dsobj_dir = dsgit_dir / 'annex' / 'objects'
-        return dsgit_dir, archive_dir, dsobj_dir
+        return get_layout_locations(1, base_path, dsid)
 
     def _get_obj_location(self, key):
         # Note: Changes to this method may require an update of RIARemote._layout_version

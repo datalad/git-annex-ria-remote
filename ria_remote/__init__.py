@@ -18,10 +18,10 @@ command_suite = (
             'ria_export_archive'
         ),
         (
-            'ria_remote.install',
-            'Install',
-            'ria-install',
-            'ria_install'
+            'ria_remote.create_sibling_ria',
+            'CreateSiblingRia',
+            'create-sibling-ria',
+            'create_sibling_ria'
         ),
     ]
 )

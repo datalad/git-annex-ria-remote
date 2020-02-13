@@ -17,11 +17,5 @@ command_suite = (
             'ria-export-archive',
             'ria_export_archive'
         ),
-        (
-            'ria_remote.create_sibling_ria',
-            'CreateSiblingRia',
-            'create-sibling-ria',
-            'create_sibling_ria'
-        ),
     ]
 )

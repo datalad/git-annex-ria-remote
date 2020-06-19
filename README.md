@@ -1,5 +1,7 @@
 # Git-annex special remote for accessing (Remote) Indexed file Archives (RIA)
 
+**!!! This repository is obsolete. All functionality is part of mainline DataLad and contained in its 0.13 release. !!!** 
+
 [![Travis tests status](https://secure.travis-ci.org/datalad/git-annex-ria-remote.png?branch=master)](https://travis-ci.org/datalad/git-annex-ria-remote) [![GitHub release](https://img.shields.io/github/release/datalad/git-annex-ria-remote.svg)](https://GitHub.com/datalad/git-annex-ria-remote/releases/) [![PyPI version fury.io](https://badge.fury.io/py/ria-remote.svg)](https://pypi.python.org/pypi/ria-remote/)
 
 This [git-annex](http://git-annex.branchable.com) [special
